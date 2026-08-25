@@ -1,131 +1,101 @@
-# SM0 - Utilitário de Espelhamento Android
+# 📱 SM0 - Utilitário de Espelhamento Android
 
-Aplicação desktop para espelhamento sem fio de smartphones Android usando scrcpy e sndcpy.
+Aplicação desktop moderna construída em Python (**CustomTkinter**) para espelhamento de tela e transmissão de áudio sem fio de smartphones Android (via Wi-Fi / ADB Wireless e cabo USB), utilizando o **scrcpy 3.x**.
 
-## Instalação
+---
 
-1. **Instalar Python 3.x** (se ainda não tiver)
-   - Baixe em: https://www.python.org/downloads/
-   - Certifique-se de marcar "Add Python to PATH" durante a instalação
+## ✨ Funcionalidades Principais
 
-2. **Instalar dependências**
+* **Conexão Direta e Pareamento Sem Fio:** Pareie facilmente via Depuração Sem Fio (Android 11+) usando PIN e conecte via IP e Porta em segundos.
+* **Detecção Automática do ADB:** Monitora e exibe em tempo real os aparelhos Android conectados (USB ou Wi-Fi).
+* **Reset Rápido do ADB (`🧹 Resetar ADB`):** Desconecta sockets travados e reinicia o servidor ADB com 1 clique.
+* **Áudio Nativo de Baixa Latência:** Streaming de áudio nativo integrado diretamente pelo motor do `scrcpy 3.x`.
+* **Controle Avançado de Vídeo:**
+  * Resoluções selecionáveis: `720p`, `1080p`, `1440p` ou `Original`.
+  * Taxa de quadros: `30 FPS`, `60 FPS` ou `Max`.
+  * Bitrate configurável (padrão: 12 Mbps).
+* **Modos de Economia e Produtividade:**
+  * **Apagar tela do celular:** Desliga o display do celular durante o espelhamento para poupar bateria e evitar aquecimento (`--turn-screen-off`).
+  * **Manter ativo:** Impede que o celular suspenda durante o uso (`--stay-awake`).
+  * **Modo Desktop / DeX:** Ativa flags de redimensionamento e janelas livres no Android.
+* **Salvamento Automático:** Lembra suas preferências, último IP e portas no arquivo `settings.json`.
+
+---
+
+## 📋 Pré-requisitos
+
+1. **Python 3.10+** instalado no Windows (certifique-se de marcar *"Add Python to PATH"* durante a instalação).
+2. Smartphone Android com **Depuração Sem Fio** (Android 11 ou superior) ou **Depuração USB** ativada nas *Opções do Desenvolvedor*.
+
+---
+
+## 🚀 Instalação e Execução
+
+### Método Rápido (Recomendado)
+Dê um duplo clique no arquivo:
+```cmd
+executar_sm0.bat
+```
+*(O script verifica as dependências e inicia o SM0 automaticamente)*
+
+### Método Manual via Terminal
+1. Instale a dependência:
    ```powershell
-   cd C:\Users\user\Desktop\sm0
    pip install -r requirements.txt
    ```
-
-3. **Configurar sndcpy (opcional)**
-   - Baixe o sndcpy de: https://github.com/rom1v/sndcpy
-   - Extraia os arquivos para a pasta `sndcpy/` no diretório do projeto
-   - Certifique-se de que o arquivo `sndcpy.bat` está presente
-
-## Uso
-
-1. **Executar a aplicação**
+2. Inicie a aplicação:
    ```powershell
-   cd C:\Users\user\Desktop\sm0
    python main.py
    ```
 
-2. **Configurar conexão no Android**
-   - Vá em Configurações > Desenvolvedor > Depuração sem fio
-   - Ative "Depuração sem fio"
-   - Anote o IP, portas e código de pareamento
+---
 
-3. **Conectar**
-   - Preencha os dados de conexão na aplicação
-   - Clique em "Conectar"
-   - Aguarde a conexão ser estabelecida
+## 📱 Guia de Conexão Sem Fio (Passo a Passo)
 
-## Configurações
+### 1. No Celular (Conectado na mesma rede Wi-Fi que o PC)
+1. Acesse: **Configurações** > **Opções do desenvolvedor** > **Depuração sem fio**.
+2. Ative a chave **Depuração sem fio**.
+3. Observe o **Endereço IP e porta principal** (ex: `192.168.3.83:38171`).
 
-- **Resolução**: 720p, 1080p, 1440p ou Original
-- **FPS**: 30, 60 ou Máximo
-- **Bitrate**: Taxa de bits em Mbps (padrão: 12)
-- **Áudio**: Habilita/desabilita o áudio via sndcpy
+### 2. Primeiro Pareamento (Se for o primeiro acesso no computador)
+1. No celular, toque em **"Parear dispositivo com código de pareamento"**.
+2. Uma janela popup exibirá:
+   * **Porta de pareamento** (ex: `33179`).
+   * **Código de pareamento Wi-Fi de 6 dígitos** (ex: `759166`).
+3. No **SM0**, preencha o **IP**, a **Porta Conexão**, a **Porta Parear** e o **PIN**.
+4. Clique em **"▶ Conectar e Espelhar"**.
 
-## Estrutura de Arquivos
+### 3. Conexões Futuras
+* O pareamento fica salvo no celular! Nas próximas vezes, basta conferir o **IP** e a **Porta Conexão (Principal)** na tela de Depuração sem fio do celular e clicar em **"▶ Conectar e Espelhar"** (os campos de PIN podem ficar em branco).
+
+---
+
+## ⌨️ Atalhos Úteis do Scrcpy durante o Espelhamento
+
+| Atalho | Ação |
+| :--- | :--- |
+| `Alt` + `F` | Alternar tela cheia (Fullscreen) |
+| `Alt` + `O` | Ligar/desligar a tela do celular |
+| `Alt` + `H` | Botão Home (Início) |
+| `Alt` + `B` ou `Botão Direito do Mouse` | Botão Voltar (Back) |
+| `Alt` + `S` | Alternar aplicativos recentes |
+| `Alt` + `Up` / `Down` | Aumentar / Diminuir volume |
+| `Ctrl` + `V` no PC | Cola a área de transferência do PC no Android |
+
+---
+
+## 📂 Estrutura de Arquivos
 
 ```
 sm0/
-├── main.py              # Aplicação principal
-├── requirements.txt     # Dependências Python
-├── settings.json        # Configurações salvas (criado automaticamente)
-├── scrcpy/             # Arquivos do scrcpy
-│   ├── scrcpy.exe
-│   ├── adb.exe
-│   └── ...
-└── sndcpy/             # Arquivos do sndcpy (opcional)
-    ├── sndcpy.bat
-    ├── sndcpy.apk
-    └── ...
+├── main.py              # Interface gráfica CustomTkinter e lógica de controle
+├── executar_sm0.bat     # Inicializador automático para Windows
+├── requirements.txt     # Dependências Python (customtkinter)
+├── settings.json        # Configurações salvas (gerado automaticamente)
+├── README.md            # Documentação da aplicação
+└── scrcpy/             # Binários embutidos do scrcpy 3.x e ADB
+    ├── scrcpy.exe
+    ├── adb.exe
+    ├── scrcpy-server
+    └── ... (DLLs auxiliares)
 ```
-
-Agora vou criar um arquivo batch para facilitar a execução:
-
-```batch:Users/user/Desktop/sm0/executar_sm0.bat
-@echo off
-echo SM0 - Utilitario de Espelhamento Android
-echo.
-echo Instalando dependencias...
-pip install -r requirements.txt
-echo.
-echo Iniciando aplicacao...
-python main.py
-pause
-```
-
-## Próximos Passos
-
-Agora você tem a estrutura completa do projeto SM0! Para começar:
-
-1. **Execute o arquivo batch** (duplo clique em `executar_sm0.bat`) ou use o PowerShell:
-   ```powershell
-   cd C:\Users\user\Desktop\sm0
-   pip install -r requirements.txt
-   python main.py
-   ```
-
-2. **Configure o sndcpy** (opcional):
-   - Baixe de https://github.com/rom1v/sndcpy
-   - Extraia para a pasta `sndcpy/`
-
-3. **Teste a aplicação**:
-   - Configure a depuração sem fio no seu S22
-   - Preencha os dados de conexão
-   - Clique em "Conectar"
-
-A aplicação está completa e funcional, seguindo exatamente as especificações que você forneceu. Ela inclui:
-
-- ✅ Interface moderna com CustomTkinter
-- ✅ Validação de campos
-- ✅ Gerenciamento de processos (adb, scrcpy, sndcpy)
-- ✅ Salvamento automático de configurações
-- ✅ Status em tempo real
-- ✅ Tratamento de erros
-- ✅ Fechamento limpo da aplicação
-
-O código está pronto para uso e deve funcionar perfeitamente com seu setup atual!
-
-## Solução de Problemas
-
-### Firewall do Windows
-Na primeira execução, o Windows Defender pode bloquear o adb.exe. Clique em "Permitir acesso" para redes Privadas e Públicas.
-
-### Conexão falha
-- Verifique se o PC e Android estão na mesma rede Wi-Fi
-- Confirme se a "Isolação de AP/Cliente" está desativada no roteador
-- Verifique se os dados de conexão estão corretos
-
-### Áudio não funciona
-- Certifique-se de que o sndcpy está instalado corretamente
-- Verifique se o VLC está instalado no sistema
-- O áudio pode ter delay de alguns segundos
-
-## Suporte
-
-Para problemas ou dúvidas, verifique:
-1. Se todas as dependências estão instaladas
-2. Se os arquivos do scrcpy estão presentes
-3. Se as configurações de rede estão corretas
-
