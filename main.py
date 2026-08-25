@@ -6,6 +6,8 @@ import time
 import os
 import re
 from pathlib import Path
+from PIL import Image
+from adb_qr_pair import ADBQRPairer
 
 # Configuração do tema
 ctk.set_appearance_mode("dark")
@@ -15,15 +17,17 @@ class SM0App:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.title("SM0 - Utilitário de Espelhamento Android")
-        self.root.geometry("640x780")
+        self.root.geometry("680x860")
         self.root.resizable(True, True)
-        self.root.minsize(520, 650)
+        self.root.minsize(560, 720)
         
         # Variáveis de controle
         self.scrcpy_process = None
         self.is_connected = False
         self.reconnect_thread = None
         self.should_reconnect = False
+        self.qr_pairer = None
+        self.qr_image_tk = None
         
         # Carregar configurações
         self.settings_file = Path("settings.json")
@@ -37,6 +41,9 @@ class SM0App:
         
         # Atualizar status dos dispositivos na inicialização
         self.root.after(500, self.refresh_devices_async)
+        
+        # Iniciar QR Code automaticamente na tela
+        self.root.after(300, self.start_qr_auto_pairing)
         
     def load_settings(self):
         """Carrega as configurações salvas ou usa padrões"""
@@ -90,7 +97,7 @@ class SM0App:
         """Cria todos os widgets da interface"""
         # Header principal
         title_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        title_frame.pack(pady=(15, 5), fill="x", padx=20)
+        title_frame.pack(pady=(12, 4), fill="x", padx=20)
         
         title_label = ctk.CTkLabel(
             title_frame, 
@@ -124,11 +131,11 @@ class SM0App:
         
         # Scrollable frame principal
         scrollable_frame = ctk.CTkScrollableFrame(self.root)
-        scrollable_frame.pack(padx=15, pady=5, fill="both", expand=True)
+        scrollable_frame.pack(padx=15, pady=4, fill="both", expand=True)
         
         # === SEÇÃO 1: STATUS DO ADB ===
         dev_frame = ctk.CTkFrame(scrollable_frame)
-        dev_frame.pack(padx=10, pady=6, fill="x")
+        dev_frame.pack(padx=10, pady=5, fill="x")
         
         dev_title = ctk.CTkLabel(
             dev_frame, 
@@ -144,17 +151,84 @@ class SM0App:
             text_color="gray"
         )
         self.device_status_label.pack(anchor="w", padx=10, pady=(0, 6))
-        
-        # === SEÇÃO 2: CONEXÃO COM O IP E PORTA DIGITADOS ===
+
+        # === SEÇÃO 2: PAREAMENTO AUTOMÁTICO POR QR CODE (AUTO-START) ===
+        self.qr_box = ctk.CTkFrame(scrollable_frame, fg_color="#1E2228", border_width=1, border_color="#30363D")
+        self.qr_box.pack(padx=10, pady=6, fill="x")
+
+        qr_header_frame = ctk.CTkFrame(self.qr_box, fg_color="transparent")
+        qr_header_frame.pack(padx=10, pady=(8, 4), fill="x")
+
+        qr_title = ctk.CTkLabel(
+            qr_header_frame,
+            text="📷 Conexão Rápida por QR Code (Espelhamento Automático)",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color="#58A6FF"
+        )
+        qr_title.pack(side="left")
+
+        # Botão Regenerar QR
+        self.btn_new_qr = ctk.CTkButton(
+            qr_header_frame,
+            text="🔄 Novo QR",
+            width=80,
+            height=26,
+            font=ctk.CTkFont(size=11),
+            fg_color="#30363D",
+            hover_color="#484F58",
+            command=self.start_qr_auto_pairing
+        )
+        self.btn_new_qr.pack(side="right")
+
+        # Área de exibição do QR Code e instruções
+        qr_content_frame = ctk.CTkFrame(self.qr_box, fg_color="transparent")
+        qr_content_frame.pack(padx=10, pady=(2, 10), fill="x")
+
+        # Container do QR Code
+        self.qr_label = ctk.CTkLabel(qr_content_frame, text="Gerando QR Code...", width=190, height=190)
+        self.qr_label.pack(side="left", padx=(10, 15), pady=5)
+
+        # Instruções e status do QR Code
+        qr_info_frame = ctk.CTkFrame(qr_content_frame, fg_color="transparent")
+        qr_info_frame.pack(side="left", fill="both", expand=True, pady=5)
+
+        instrucoes_texto = (
+            "Como conectar e espelhar automaticamente:\n"
+            "1. No celular, abra Configurações > Opções do desenvolvedor.\n"
+            "2. Ative Depuração sem fio.\n"
+            "3. Toque em 'Parear dispositivo com código QR'.\n"
+            "4. Aponte a câmera para o QR Code.\n"
+            "👉 O espelhamento iniciará sozinho assim que lido!"
+        )
+        self.qr_instructions_label = ctk.CTkLabel(
+            qr_info_frame,
+            text=instrucoes_texto,
+            font=ctk.CTkFont(size=12),
+            justify="left",
+            anchor="w",
+            text_color="#C9D1D9"
+        )
+        self.qr_instructions_label.pack(anchor="w", pady=(0, 6))
+
+        self.qr_status_badge = ctk.CTkLabel(
+            qr_info_frame,
+            text="⏳ Aguardando leitura do QR Code no celular...",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color="#F0883E",
+            anchor="w"
+        )
+        self.qr_status_badge.pack(anchor="w", pady=(2, 0))
+
+        # === SEÇÃO 3: CONEXÃO MANUAL (IP E PORTAS) ===
         connection_frame = ctk.CTkFrame(scrollable_frame)
         connection_frame.pack(padx=10, pady=6, fill="x")
         
         connection_title = ctk.CTkLabel(
             connection_frame, 
-            text="Dados de Conexão (Insira o IP e Porta do Celular)",
-            font=ctk.CTkFont(size=14, weight="bold")
+            text="Conexão Manual por IP (Opcional)",
+            font=ctk.CTkFont(size=13, weight="bold")
         )
-        connection_title.pack(anchor="w", padx=10, pady=(8, 5))
+        connection_title.pack(anchor="w", padx=10, pady=(8, 4))
         
         # IP do Celular
         ip_frame = ctk.CTkFrame(connection_frame, fg_color="transparent")
@@ -173,15 +247,15 @@ class SM0App:
         if self.settings.get("last_connect_port"):
             self.connect_port_entry.insert(0, str(self.settings["last_connect_port"]))
             
-        # Pareamento (Opcional - somente para novo pareamento)
+        # Pareamento com PIN Manual
         pair_box = ctk.CTkFrame(connection_frame)
         pair_box.pack(padx=10, pady=6, fill="x")
         
         pair_hint = ctk.CTkLabel(
             pair_box,
-            text="Pareamento com PIN (Preencha somente se for parear novo aparelho):",
+            text="Pareamento com PIN (Deixe em branco se já pareou por QR Code):",
             font=ctk.CTkFont(size=11, weight="bold"),
-            text_color="#58A6FF"
+            text_color="#8B949E"
         )
         pair_hint.pack(anchor="w", padx=8, pady=(4, 2))
         
@@ -196,20 +270,20 @@ class SM0App:
             self.pair_port_entry.insert(0, str(self.settings["last_pair_port"]))
             
         # Código de Pareamento
-        ctk.CTkLabel(pair_inputs_frame, text="PIN (6 dígitos):").pack(side="left", padx=(10, 4))
+        ctk.CTkLabel(pair_inputs_frame, text="PIN:").pack(side="left", padx=(10, 4))
         self.pair_code_entry = ctk.CTkEntry(pair_inputs_frame, placeholder_text="Ex: 759166", width=95)
         self.pair_code_entry.pack(side="left", padx=4)
         if self.settings.get("last_pair_code"):
             self.pair_code_entry.insert(0, str(self.settings["last_pair_code"]))
             
-        # === SEÇÃO 3: OPÇÕES DE VÍDEO E PERFORMANCE ===
+        # === SEÇÃO 4: OPÇÕES DE VÍDEO E PERFORMANCE ===
         config_frame = ctk.CTkFrame(scrollable_frame)
         config_frame.pack(padx=10, pady=6, fill="x")
         
         config_title = ctk.CTkLabel(
             config_frame, 
             text="Configurações de Transmissão",
-            font=ctk.CTkFont(size=14, weight="bold")
+            font=ctk.CTkFont(size=13, weight="bold")
         )
         config_title.pack(anchor="w", padx=10, pady=(8, 5))
         
@@ -280,16 +354,16 @@ class SM0App:
         )
         self.desktop_checkbox.pack(side="left")
         
-        # === SEÇÃO 4: BOTÕES E STATUS ===
+        # === SEÇÃO 5: BOTÕES DE AÇÃO E LOG ===
         control_frame = ctk.CTkFrame(self.root)
-        control_frame.pack(padx=15, pady=(5, 15), fill="x")
+        control_frame.pack(padx=15, pady=(4, 12), fill="x")
         
         button_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
-        button_frame.pack(padx=10, pady=10, fill="x")
+        button_frame.pack(padx=10, pady=8, fill="x")
         
         self.connect_button = ctk.CTkButton(
             button_frame,
-            text="▶ Conectar e Espelhar",
+            text="▶ Conectar e Espelhar Manualmente",
             command=self.connect_device,
             fg_color="#2EA043",
             hover_color="#238636",
@@ -312,15 +386,86 @@ class SM0App:
         
         # Status Box
         status_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
-        status_frame.pack(padx=10, pady=(0, 10), fill="both", expand=True)
+        status_frame.pack(padx=10, pady=(0, 8), fill="both", expand=True)
         
         ctk.CTkLabel(status_frame, text="Log de Status:", font=ctk.CTkFont(size=12, weight="bold")).pack(anchor="w")
         
-        self.status_text = ctk.CTkTextbox(status_frame, height=90, font=ctk.CTkFont(family="Consolas", size=11))
+        self.status_text = ctk.CTkTextbox(status_frame, height=80, font=ctk.CTkFont(family="Consolas", size=11))
         self.status_text.pack(fill="both", expand=True)
-        self.status_text.insert("1.0", "Pronto. Insira o IP e a Porta de conexão do celular e clique em 'Conectar e Espelhar'.")
+        self.status_text.insert("1.0", "Pronto. Aponte a câmera do celular para o QR Code para espelhar automaticamente.")
         self.status_text.configure(state="disabled")
     
+    def start_qr_auto_pairing(self):
+        """Inicializa e exibe o QR Code automaticamente na interface e escuta mDNS."""
+        try:
+            if self.qr_pairer:
+                self.qr_pairer.stop()
+
+            self.qr_pairer = ADBQRPairer(
+                adb_path="scrcpy/adb.exe",
+                on_status=self._on_qr_status_update,
+                on_success=self._on_qr_success,
+                on_error=self._on_qr_error
+            )
+            
+            # Gerar imagem do QR Code
+            pil_image = self.qr_pairer.get_qr_image(size=180)
+            self.qr_image_tk = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(180, 180))
+            self.qr_label.configure(image=self.qr_image_tk, text="")
+            
+            self.qr_status_badge.configure(
+                text="⏳ Aguardando leitura do QR Code no celular...",
+                text_color="#F0883E"
+            )
+            
+            # Iniciar escuta mDNS em background
+            self.qr_pairer.start_listening()
+        except Exception as e:
+            self.qr_status_badge.configure(text=f"Erro ao gerar QR Code: {e}", text_color="#F85149")
+
+    def _on_qr_status_update(self, message: str):
+        """Callback thread-safe para atualizar o status do QR Code na GUI."""
+        def _update():
+            self.qr_status_badge.configure(text=message, text_color="#58A6FF")
+            self.update_status(message)
+        self.root.after(0, _update)
+
+    def _on_qr_success(self, ip: str, port: int, serial: str):
+        """Callback thread-safe quando o pareamento e conexão são concluídos com sucesso."""
+        def _success():
+            self.qr_status_badge.configure(
+                text=f"✅ Conectado! Iniciando espelhamento...",
+                text_color="#3FB950"
+            )
+            self.update_status(f"🎉 Aparelho pareado e conectado via QR Code em {serial or ip}!")
+            
+            # Atualizar campos na UI e limpar campos de pareamento antigo
+            self.ip_entry.delete(0, "end")
+            self.ip_entry.insert(0, ip)
+            
+            if port:
+                self.connect_port_entry.delete(0, "end")
+                self.connect_port_entry.insert(0, str(port))
+            
+            self.pair_port_entry.delete(0, "end")
+            self.pair_code_entry.delete(0, "end")
+            
+            self.save_settings()
+            self.refresh_devices_async()
+            
+            # INICIAR ESPELHAMENTO AUTOMATICAMENTE!
+            target = serial if serial else (f"{ip}:{port}" if port else ip)
+            threading.Thread(target=self.start_mirroring, args=(target,), daemon=True).start()
+            
+        self.root.after(0, _success)
+
+    def _on_qr_error(self, err_msg: str):
+        """Callback thread-safe para reportar erros no fluxo do QR Code."""
+        def _error():
+            self.qr_status_badge.configure(text=f"⚠️ {err_msg}", text_color="#F85149")
+            self.update_status(f"Erro no QR Code: {err_msg}")
+        self.root.after(0, _error)
+
     def update_status(self, message):
         """Atualiza a mensagem de status no painel"""
         self.status_text.configure(state="normal")
@@ -378,6 +523,8 @@ class SM0App:
                 subprocess.run(["scrcpy/adb.exe", "start-server"], capture_output=True, timeout=5)
                 self.update_status("ADB reiniciado com sucesso!")
                 self.refresh_devices_async()
+                # Reiniciar escuta do QR Code
+                self.root.after(500, self.start_qr_auto_pairing)
             except Exception as e:
                 self.update_status(f"Erro ao reiniciar ADB: {e}")
         threading.Thread(target=_reset_task, daemon=True).start()
@@ -418,71 +565,92 @@ class SM0App:
         return base_cmd
     
     def connect_device(self):
-        """Inicia o processo de conexão usando exatamente os dados preenchidos"""
+        """Inicia o processo manual de conexão usando os dados preenchidos"""
         self.connect_button.configure(state="disabled")
         self.save_settings()
         threading.Thread(target=self._connect_thread, daemon=True).start()
     
     def _connect_thread(self):
-        """Thread que executa o pareamento/conexão estritamente com os dados da UI"""
+        """Thread manual que executa conexão/espelhamento com os dados da UI"""
         try:
             ip = self.ip_entry.get().strip()
             connect_port = self.connect_port_entry.get().strip()
             pair_port = self.pair_port_entry.get().strip()
             pair_code = self.pair_code_entry.get().strip()
             
-            if not ip:
-                self.update_status("Erro: Digite o IP do celular!")
-                self.connect_button.configure(state="normal")
-                return
-
-            # 1. Se o usuário forneceu dados de pareamento, executar 'adb pair'
-            if pair_port and pair_code:
-                self.update_status(f"Pareando com {ip}:{pair_port}...")
-                pair_cmd = ["scrcpy/adb.exe", "pair", f"{ip}:{pair_port}"]
-                pair_res = subprocess.run(
-                    pair_cmd,
-                    input=f"{pair_code}\n",
-                    text=True,
-                    capture_output=True,
-                    timeout=20
-                )
-                if pair_res.returncode != 0:
-                    err_msg = pair_res.stderr.strip() or pair_res.stdout.strip()
-                    self.update_status(f"Erro no pareamento: {err_msg}")
+            # Verificar se já temos dispositivos conectados no ADB
+            devices = self.get_adb_devices()
+            target_serial = None
+            
+            # Se já há algum dispositivo conectado com este IP ou serial, usar direto
+            for d in devices:
+                if ip and (ip in d["serial"]):
+                    target_serial = d["serial"]
+                    break
+            
+            if not target_serial and not ip and devices:
+                target_serial = devices[0]["serial"]
+                
+            if not target_serial:
+                if not ip:
+                    self.update_status("Erro: Aponte a câmera para o QR Code ou digite o IP do celular!")
                     self.connect_button.configure(state="normal")
                     return
-                self.update_status("Pareamento com PIN realizado com sucesso!")
-            
-            # 2. Conectar à porta principal informada
-            target_endpoint = f"{ip}:{connect_port}" if connect_port else ip
-            self.update_status(f"Conectando ao celular em {target_endpoint}...")
-            
-            conn_res = subprocess.run(
-                ["scrcpy/adb.exe", "connect", target_endpoint],
-                capture_output=True,
-                text=True,
-                timeout=20
-            )
-            
-            conn_output = (conn_res.stdout + conn_res.stderr).lower()
-            if "failed" in conn_output or "cannot connect" in conn_output or conn_res.returncode != 0:
-                # Se falhar a conexão direta, checar se já há dispositivo ativo correspondente
+
+                # Se o usuário preencheu explicitamente campos de pareamento com PIN manual
+                if pair_port and pair_code:
+                    self.update_status(f"Pareando com {ip}:{pair_port}...")
+                    pair_cmd = ["scrcpy/adb.exe", "pair", f"{ip}:{pair_port}", pair_code]
+                    pair_res = subprocess.run(
+                        pair_cmd,
+                        capture_output=True,
+                        text=True,
+                        timeout=15
+                    )
+                    if pair_res.returncode != 0 and "successfully paired" not in (pair_res.stdout + pair_res.stderr).lower():
+                        err_msg = pair_res.stderr.strip() or pair_res.stdout.strip()
+                        self.update_status(f"Erro no pareamento manual: {err_msg}")
+                        self.connect_button.configure(state="normal")
+                        return
+                    self.update_status("Pareamento manual realizado!")
+                
+                # Conectar à porta informada
+                target_endpoint = f"{ip}:{connect_port}" if connect_port else ip
+                self.update_status(f"Conectando ao celular em {target_endpoint}...")
+                
+                conn_res = subprocess.run(
+                    ["scrcpy/adb.exe", "connect", target_endpoint],
+                    capture_output=True,
+                    text=True,
+                    timeout=15
+                )
+                
+                conn_output = (conn_res.stdout + conn_res.stderr).lower()
+                time.sleep(1)
+                
                 devices = self.get_adb_devices()
                 matching_dev = [d for d in devices if ip in d["serial"] or target_endpoint in d["serial"]]
                 if matching_dev:
                     target_serial = matching_dev[0]["serial"]
-                    self.update_status(f"Usando conexão ativa existente: {target_serial}")
+                elif "connected" in conn_output or "already" in conn_output:
+                    target_serial = target_endpoint
                 else:
                     self.update_status(f"Erro ao conectar em {target_endpoint}: {conn_res.stdout.strip() or conn_res.stderr.strip()}")
                     self.connect_button.configure(state="normal")
                     return
-            else:
-                target_serial = target_endpoint
+
+            self.start_mirroring(target_serial)
+                
+        except Exception as e:
+            self.update_status(f"Erro inesperado: {str(e)}")
+            self.connect_button.configure(state="normal")
+
+    def start_mirroring(self, target_serial: str):
+        """Inicia a sessão de espelhamento com o scrcpy para o serial indicado."""
+        try:
+            self.update_status(f"Conectado a {target_serial}! Abrindo espelhamento...")
             
-            self.update_status(f"Conexão ADB estabelecida com {target_serial}! Iniciando espelhamento...")
-            
-            # 3. Aplicar modo desktop se solicitado
+            # 1. Modo desktop se habilitado
             if self.desktop_var.get():
                 try:
                     desktop_commands = [
@@ -494,9 +662,13 @@ class SM0App:
                         subprocess.run(cmd, capture_output=True, timeout=5)
                 except Exception:
                     pass
-            
-            # 4. Iniciar scrcpy com o serial correto
+
+            # 2. Iniciar scrcpy
             scrcpy_cmd = self.get_scrcpy_command(serial=target_serial)
+            
+            # Encerrar processo scrcpy anterior se existente
+            if self.scrcpy_process and self.scrcpy_process.poll() is None:
+                self.scrcpy_process.terminate()
             
             self.scrcpy_process = subprocess.Popen(
                 scrcpy_cmd,
@@ -505,12 +677,13 @@ class SM0App:
                 stderr=subprocess.PIPE
             )
             
-            time.sleep(1.5)
+            time.sleep(1.2)
             
             if self.scrcpy_process.poll() is None:
                 self.update_status(f"✅ Espelhamento ativo em {target_serial}!")
                 self.is_connected = True
                 self.should_reconnect = True
+                self.connect_button.configure(state="disabled")
                 self.stop_button.configure(state="normal")
                 self.refresh_devices_async()
                 
@@ -522,9 +695,8 @@ class SM0App:
                 err = stderr.decode('utf-8', errors='ignore') if stderr else stdout.decode('utf-8', errors='ignore')
                 self.update_status(f"Erro ao iniciar scrcpy: {err.strip()}")
                 self.connect_button.configure(state="normal")
-                
         except Exception as e:
-            self.update_status(f"Erro inesperado: {str(e)}")
+            self.update_status(f"Erro ao iniciar espelhamento: {str(e)}")
             self.connect_button.configure(state="normal")
     
     def _monitor_session(self):
@@ -559,6 +731,8 @@ class SM0App:
     def on_closing(self):
         """Salva configurações e limpa processos ao sair"""
         self.save_settings()
+        if self.qr_pairer:
+            self.qr_pairer.stop()
         if self.is_connected:
             self.stop_connection()
         self.root.destroy()
