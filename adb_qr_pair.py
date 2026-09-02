@@ -1,5 +1,5 @@
 """
-Módulo de Pareamento ADB via QR Code e mDNS (Zeroconf) para SM0.
+Módulo de Pareamento e Reconexão Automática ADB via QR Code e mDNS (Zeroconf) para SM0.
 Compatível com Android 11+ (Wireless Debugging / Depuração sem fio).
 """
 
@@ -11,13 +11,70 @@ import string
 import subprocess
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable, Optional, List, Dict
 from PIL import Image
 import qrcode
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf, ServiceInfo
 
 
+def get_active_adb_devices(adb_path: str = "scrcpy/adb.exe") -> List[Dict[str, str]]:
+    """Retorna a lista de dispositivos atualmente autorizados e conectados no ADB."""
+    devices = []
+    try:
+        res = subprocess.run([adb_path, "devices", "-l"], capture_output=True, text=True, timeout=4)
+        for line in res.stdout.strip().splitlines()[1:]:
+            line = line.strip()
+            if not line or line.startswith("List of devices"):
+                continue
+            parts = line.split()
+            if len(parts) >= 2 and parts[1] == "device":
+                serial = parts[0]
+                model_match = re.search(r"model:(\S+)", line)
+                model = model_match.group(1) if model_match else "Android"
+                devices.append({"serial": serial, "model": model, "raw": line})
+    except Exception:
+        pass
+    return devices
+
+
+def get_mdns_connect_services(adb_path: str = "scrcpy/adb.exe") -> List[Dict[str, str]]:
+    """Consulta 'adb mdns services' para encontrar celulares com depuração ativa na rede."""
+    services = []
+    try:
+        res = subprocess.run([adb_path, "mdns", "services"], capture_output=True, text=True, timeout=3)
+        for line in res.stdout.splitlines():
+            if "_adb-tls-connect" in line:
+                parts = line.split()
+                # Exemplo: adb-RQCTB01SRXM-LUFN1L  _adb-tls-connect._tcp  192.168.3.5:41603
+                for p in parts:
+                    if ":" in p and "." in p:
+                        host_port = p.split(":")
+                        if len(host_port) == 2 and host_port[1].isdigit():
+                            services.append({
+                                "service": parts[0],
+                                "ip": host_port[0],
+                                "port": int(host_port[1]),
+                                "endpoint": p
+                            })
+    except Exception:
+        pass
+    return services
+
+
+def quick_connect_adb(adb_path: str, endpoint: str, timeout: int = 5) -> bool:
+    """Tenta conexão rápida ao IP:porta via adb connect."""
+    try:
+        res = subprocess.run([adb_path, "connect", endpoint], capture_output=True, text=True, timeout=timeout)
+        out = (res.stdout + res.stderr).lower()
+        if "connected to" in out or "already connected" in out:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 class ADBQRPairListener(ServiceListener):
+    """Escuta anúncios de novos pareamentos por QR Code (_adb-tls-pairing)."""
     def __init__(self, target_service_name: str, on_found_callback: Callable[[str, int], None]):
         self.target_service_name = target_service_name
         self.on_found_callback = on_found_callback
@@ -52,11 +109,11 @@ class ADBQRPairListener(ServiceListener):
             pass
 
 
-class ADBQRConnectListener(ServiceListener):
-    def __init__(self, target_ip: str, on_connect_found_callback: Callable[[str, int], None]):
-        self.target_ip = target_ip
+class ADBAutoConnectListener(ServiceListener):
+    """Escuta anúncios de celulares já pareados na rede (_adb-tls-connect)."""
+    def __init__(self, on_connect_found_callback: Callable[[str, int, str], None]):
         self.on_connect_found_callback = on_connect_found_callback
-        self.handled = False
+        self.seen_endpoints = set()
 
     def remove_service(self, zc: Zeroconf, type_: str, name: str) -> None:
         pass
@@ -65,18 +122,23 @@ class ADBQRConnectListener(ServiceListener):
         pass
 
     def add_service(self, zc: Zeroconf, type_: str, name: str) -> None:
-        if self.handled:
-            return
-        
         try:
             info = zc.get_service_info(type_, name)
             if info:
                 addresses = info.parsed_scoped_addresses()
+                ip = None
                 for addr in addresses:
-                    if addr == self.target_ip:
-                        self.handled = True
-                        self.on_connect_found_callback(self.target_ip, info.port)
+                    if ":" not in addr:
+                        ip = addr
                         break
+                if not ip and addresses:
+                    ip = addresses[0]
+
+                if ip and info.port:
+                    endpoint = f"{ip}:{info.port}"
+                    if endpoint not in self.seen_endpoints:
+                        self.seen_endpoints.add(endpoint)
+                        self.on_connect_found_callback(ip, info.port, name)
         except Exception:
             pass
 
@@ -98,13 +160,14 @@ class ADBQRPairer:
         self.password = ""
         self.payload = ""
         self.zc: Optional[Zeroconf] = None
-        self.browser: Optional[ServiceBrowser] = None
+        self.pair_browser: Optional[ServiceBrowser] = None
         self.connect_browser: Optional[ServiceBrowser] = None
         self.is_running = False
+        self.connected_or_paired = False
         self.lock = threading.Lock()
 
     def generate_session(self) -> str:
-        """Gera credenciais seguras e payload no formato oficial AOSP."""
+        """Gera credenciais seguras e payload no formato oficial AOSP para o QR Code."""
         rand_suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
         self.service_name = f"SM0-{rand_suffix}"
         # Senha numérica de 6 dígitos para compatibilidade total
@@ -129,22 +192,30 @@ class ADBQRPairer:
         img = qr.make_image(fill_color="black", back_color="white").convert("RGB")
         return img.resize((size, size), Image.Resampling.LANCZOS)
 
-    def start_listening(self):
-        """Inicia a escuta por mDNS em segundo plano."""
+    def start_listening(self, listen_for_autoconnect: bool = True):
+        """Inicia a escuta por mDNS tanto para pareamento (QR) quanto para celulares já pareados."""
         with self.lock:
             if self.is_running:
                 self.stop()
 
             self.is_running = True
+            self.connected_or_paired = False
             if not self.payload:
                 self.generate_session()
 
         def _listen_worker():
             try:
-                self.on_status("Aguardando leitura do QR Code no celular...")
+                self.on_status("🔍 Procurando celular pareado na rede ou aguardando leitura do QR Code...")
                 self.zc = Zeroconf()
-                listener = ADBQRPairListener(self.service_name, self._on_pairing_device_found)
-                self.browser = ServiceBrowser(self.zc, "_adb-tls-pairing._tcp.local.", listener)
+
+                # 1. Escutar pareamento com QR Code
+                pair_listener = ADBQRPairListener(self.service_name, self._on_pairing_device_found)
+                self.pair_browser = ServiceBrowser(self.zc, "_adb-tls-pairing._tcp.local.", pair_listener)
+
+                # 2. Escutar dispositivos já pareados na rede local
+                if listen_for_autoconnect:
+                    auto_connect_listener = ADBAutoConnectListener(self._on_auto_connect_device_found)
+                    self.connect_browser = ServiceBrowser(self.zc, "_adb-tls-connect._tcp.local.", auto_connect_listener)
 
                 # Monitorar até 180 segundos
                 start_time = time.time()
@@ -158,30 +229,57 @@ class ADBQRPairer:
 
         threading.Thread(target=_listen_worker, daemon=True).start()
 
-    def _on_pairing_device_found(self, ip: str, pair_port: int):
-        """Disparado quando o celular anuncia o serviço de pareamento na rede local."""
-        if not self.is_running:
+    def _on_auto_connect_device_found(self, ip: str, port: int, service_name: str):
+        """Disparado quando um celular já pareado anuncia serviço de depuração na rede local."""
+        if not self.is_running or self.connected_or_paired:
             return
 
-        self.on_status(f"Celular detectado ({ip}:{pair_port})! Pareando...")
+        def _auto_connect_worker():
+            with self.lock:
+                if self.connected_or_paired:
+                    return
+
+            self.on_status(f"⚡ Celular pareado detectado em {ip}:{port}! Conectando...")
+            endpoint = f"{ip}:{port}"
+            success = quick_connect_adb(self.adb_path, endpoint, timeout=6)
+            
+            # Checar se já temos device conectado
+            active_devices = get_active_adb_devices(self.adb_path)
+            matching = [d for d in active_devices if ip in d["serial"] or endpoint in d["serial"] or service_name.split(".")[0] in d["serial"]]
+            
+            if matching:
+                target_serial = matching[0]["serial"]
+                with self.lock:
+                    self.connected_or_paired = True
+                self.on_status(f"🎉 Celular pareado reconectado com sucesso ({matching[0]['model']})!")
+                self.on_success(ip, port, target_serial)
+                self.stop()
+            elif success:
+                with self.lock:
+                    self.connected_or_paired = True
+                self.on_status(f"🎉 Conectado em {endpoint}!")
+                self.on_success(ip, port, endpoint)
+                self.stop()
+
+        threading.Thread(target=_auto_connect_worker, daemon=True).start()
+
+    def _on_pairing_device_found(self, ip: str, pair_port: int):
+        """Disparado quando o celular lê o QR Code e anuncia o serviço de pareamento na rede."""
+        if not self.is_running or self.connected_or_paired:
+            return
+
+        self.on_status(f"📷 QR Code lido pelo celular ({ip}:{pair_port})! Pareando...")
 
         def _pair_worker():
             try:
                 pair_target = f"{ip}:{pair_port}"
-                # Passa a senha como argumento direto do comando adb pair (evita bugs de stdin)
                 cmd = [self.adb_path, "pair", pair_target, self.password]
                 
-                res = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=15
-                )
-
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
                 output = (res.stdout + " " + res.stderr).strip()
 
                 if res.returncode != 0 and "successfully paired" not in output.lower():
-                    # Se falhar passando argumento direto, tentar com input interativo como fallback
+                    # Fallback com stdin interativo
                     res2 = subprocess.run(
                         [self.adb_path, "pair", pair_target],
                         input=f"{self.password}\n",
@@ -195,8 +293,6 @@ class ADBQRPairer:
                         return
 
                 self.on_status("✅ Pareamento concluído! Conectando depuração...")
-
-                # Conectar à porta de depuração do celular
                 self._resolve_and_connect(ip)
 
             except Exception as e:
@@ -205,44 +301,31 @@ class ADBQRPairer:
         threading.Thread(target=_pair_worker, daemon=True).start()
 
     def _resolve_and_connect(self, ip: str):
-        """Descobre a porta de conexão do celular e conecta o ADB."""
+        """Descobre a porta de conexão do celular recém-pareado e conecta o ADB."""
         connect_port = None
 
-        # 1. Tentar localizar a porta de conexão via listener mDNS _adb-tls-connect._tcp.local.
-        connected_event = threading.Event()
-        found_port = []
+        # 1. Consultar 'adb mdns services'
+        services = get_mdns_connect_services(self.adb_path)
+        for s in services:
+            if s["ip"] == ip:
+                connect_port = s["port"]
+                break
 
-        def _on_connect_service(discovered_ip: str, port: int):
-            found_port.append(port)
-            connected_event.set()
+        # 2. Verificar se já existe conexão ativa no 'adb devices'
+        active_devices = get_active_adb_devices(self.adb_path)
+        for d in active_devices:
+            if ip in d["serial"]:
+                with self.lock:
+                    self.connected_or_paired = True
+                self.on_status(f"🎉 Conexão ADB ativa encontrada: {d['serial']}!")
+                self.on_success(ip, connect_port or 5555, d["serial"])
+                self.stop()
+                return
 
-        try:
-            if self.zc:
-                conn_listener = ADBQRConnectListener(ip, _on_connect_service)
-                self.connect_browser = ServiceBrowser(self.zc, "_adb-tls-connect._tcp.local.", conn_listener)
-                connected_event.wait(timeout=3.0)
-        except Exception:
-            pass
-
-        if found_port:
-            connect_port = found_port[0]
-
-        # 2. Se não detectou a porta específica por mDNS listener, consultar 'adb mdns services'
-        if not connect_port:
-            connect_port = self._get_connect_port_from_adb_mdns(ip)
-
-        # 3. Verificar se já existe conexão ativa no 'adb devices'
-        active_serial = self._get_connected_device_serial(ip)
-        if active_serial:
-            self.on_status(f"🎉 Conexão ADB ativa encontrada: {active_serial}!")
-            self.on_success(ip, connect_port or 5555, active_serial)
-            self.stop()
-            return
-
-        # 4. Tentar comando connect
+        # 3. Tentar conectar
         target_to_connect = f"{ip}:{connect_port}" if connect_port else ip
-
         self.on_status(f"Conectando ADB em {target_to_connect}...")
+        
         try:
             conn_res = subprocess.run(
                 [self.adb_path, "connect", target_to_connect],
@@ -253,11 +336,15 @@ class ADBQRPairer:
             out = (conn_res.stdout + conn_res.stderr).strip()
             
             time.sleep(1.0)
-            active_serial = self._get_connected_device_serial(ip)
+            active_devices = get_active_adb_devices(self.adb_path)
+            matching = [d for d in active_devices if ip in d["serial"] or target_to_connect in d["serial"]]
             
-            if active_serial:
-                self.on_status(f"🎉 Conectado com sucesso em {active_serial}!")
-                self.on_success(ip, connect_port or 5555, active_serial)
+            with self.lock:
+                self.connected_or_paired = True
+
+            if matching:
+                self.on_status(f"🎉 Conectado com sucesso em {matching[0]['serial']}!")
+                self.on_success(ip, connect_port or 5555, matching[0]["serial"])
             elif "connected" in out.lower() or "already" in out.lower():
                 self.on_status(f"🎉 Conectado com sucesso em {target_to_connect}!")
                 self.on_success(ip, connect_port or 5555, target_to_connect)
@@ -268,45 +355,14 @@ class ADBQRPairer:
         finally:
             self.stop()
 
-    def _get_connected_device_serial(self, ip: str) -> Optional[str]:
-        """Verifica se há um serial correspondente conectado em adb devices."""
-        try:
-            res = subprocess.run([self.adb_path, "devices"], capture_output=True, text=True, timeout=4)
-            for line in res.stdout.strip().splitlines()[1:]:
-                parts = line.split()
-                if len(parts) >= 2 and parts[1] == "device":
-                    serial = parts[0]
-                    if ip in serial or ":" in serial:
-                        return serial
-                    return serial
-        except Exception:
-            pass
-        return None
-
-    def _get_connect_port_from_adb_mdns(self, ip: str) -> Optional[int]:
-        """Tenta obter a porta de conexão a partir da saída de 'adb mdns services'."""
-        try:
-            res = subprocess.run([self.adb_path, "mdns", "services"], capture_output=True, text=True, timeout=3)
-            for line in res.stdout.splitlines():
-                if "_adb-tls-connect" in line and ip in line:
-                    parts = line.split()
-                    for p in parts:
-                        if ":" in p:
-                            host_port = p.split(":")
-                            if len(host_port) == 2 and host_port[1].isdigit():
-                                return int(host_port[1])
-        except Exception:
-            pass
-        return None
-
     def stop(self):
         """Para listeners mDNS e libera recursos de rede."""
         with self.lock:
             self.is_running = False
             try:
-                if self.browser:
-                    self.browser.cancel()
-                    self.browser = None
+                if self.pair_browser:
+                    self.pair_browser.cancel()
+                    self.pair_browser = None
                 if self.connect_browser:
                     self.connect_browser.cancel()
                     self.connect_browser = None

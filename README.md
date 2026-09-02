@@ -6,13 +6,16 @@ Aplicação desktop moderna construída em Python (**CustomTkinter**) para espel
 
 ## ✨ Funcionalidades Principais
 
-* 📷 **Conexão e Espelhamento Automático por QR Code (Android 11+):**
-  * Ao abrir o aplicativo, um QR Code exclusivo com credenciais seguras é gerado imediatamente na tela.
-  * Basta apontar a câmera do celular em *Depuração sem fio > Parear dispositivo com código QR* — o SM0 detecta o aparelho via mDNS (Zeroconf), realiza o pareamento e **inicia a janela de espelhamento automaticamente**, sem necessidade de clicar em botão algum!
-* ⚡ **Descoberta de Rede mDNS / Zeroconf:** Localiza automaticamente a porta de pareamento e a porta de conexão de depuração do celular na rede local.
+* ⚡ **Reconexão e Espelhamento Automático (Dispositivos Já Pareados):**
+  * Se o celular já foi pareado anteriormente, ao abrir o SM0 você **não precisa escanear o QR Code de novo**!
+  * O SM0 detecta o celular automaticamente na rede Wi-Fi via mDNS / Zeroconf (`_adb-tls-connect`), reconecta e **abre a janela de espelhamento instantaneamente**.
+* 📷 **Pareamento com QR Code com 1 Clique (Android 11+):**
+  * Para novos aparelhos ou após desparear: um QR Code exclusivo com credenciais seguras é exibido na tela.
+  * Basta apontar a câmera em *Depuração sem fio > Parear dispositivo com código QR* — o pareamento é concluído e o espelhamento inicia sozinho.
+* 🌐 **Descoberta Contínua mDNS / Zeroconf:** Localiza automaticamente a porta de pareamento e a porta de depuração do celular na rede local mesmo quando as portas dinâmicas mudam após reiniciar o Wi-Fi.
 * 🛠️ **ADB Atualizado (v37.0.1):** Binários oficiais mais recentes do Android SDK Platform-Tools da Google embutidos para máxima estabilidade e compatibilidade.
 * 🔄 **Detecção em Tempo Real:** Monitora e exibe no painel o status de dispositivos conectados ao ADB (USB ou Wi-Fi).
-* 🧹 **Reset Rápido do ADB (`🧹 Resetar ADB`):** Desconecta sockets travados e reinicia o servidor ADB e o listener do QR Code com 1 clique.
+* 🧹 **Reset Rápido do ADB (`🧹 Resetar ADB`):** Desconecta sockets travados e reinicia o servidor ADB e os listeners com 1 clique.
 * 🔊 **Áudio Nativo de Baixa Latência:** Streaming de áudio integrado diretamente pelo motor do `scrcpy 3.x`.
 * 🎬 **Controle Avançado de Vídeo:**
   * Resoluções selecionáveis: `720p`, `1080p`, `1440p` ou `Original`.
