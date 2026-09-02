@@ -25,6 +25,8 @@ Aplicação desktop moderna construída em Python (**CustomTkinter**) para espel
   * **Apagar tela do celular:** Desliga o display do celular durante o espelhamento para poupar bateria e evitar aquecimento (`--turn-screen-off`).
   * **Manter ativo:** Impede que o celular suspenda durante o uso (`--stay-awake`).
   * **Modo Desktop / DeX:** Ativa flags de redimensionamento e janelas livres no Android.
+* 📥 **Minimização Silenciosa para a Bandeja (System Tray):** Ao iniciar o espelhamento, o painel do SM0 é enviado automaticamente para a bandeja perto do relógio do Windows, mantendo a área de trabalho limpa. Um clique no ícone restaura o painel imediatamente.
+* 🤫 **Execução sem Terminal Preto:** Inicialização limpa via Windows (`pythonw`), sem deixar janelas de prompt de comando abertas.
 * 💾 **Salvamento Automático:** Lembra suas preferências, último IP e portas no arquivo `settings.json`.
 
 ---

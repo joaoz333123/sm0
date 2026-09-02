@@ -1,3 +1,13 @@
+import ctypes
+
+# Ocultar a janela preta do console/terminal imediatamente se aberta via terminal
+try:
+    console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if console_hwnd:
+        ctypes.windll.user32.ShowWindow(console_hwnd, 0)  # SW_HIDE
+except Exception:
+    pass
+
 import customtkinter as ctk
 import json
 import subprocess
@@ -14,6 +24,7 @@ from adb_qr_pair import (
     quick_connect_adb
 )
 from window_controller import WindowDragResizeController
+from tray_manager import TrayManager
 
 # Configuração do tema
 ctk.set_appearance_mode("dark")
@@ -52,6 +63,16 @@ class SM0App:
         self.window_controller = WindowDragResizeController(lambda: self.scrcpy_process)
         self.window_controller.start()
 
+        # Gerenciador da bandeja do sistema (System Tray)
+        self.tray_manager = TrayManager(
+            icon_path="scrcpy/icon.png",
+            on_restore=lambda: self.root.after(0, self.restore_from_tray),
+            on_reopen_mirror=lambda: self.root.after(0, self.reopen_mirroring),
+            on_stop_mirror=lambda: self.root.after(0, self.stop_connection),
+            on_exit=lambda: self.root.after(0, self.on_closing),
+        )
+        self.tray_manager.start()
+
         # Iniciar autodescoberta e QR Code automaticamente
         self.root.after(200, self.start_auto_discovery_and_qr)
         
@@ -67,6 +88,7 @@ class SM0App:
             "force_desktop": False,
             "auto_mirror_on_connect": True,
             "borderless": False,
+            "minimize_to_tray": True,
             "last_ip": "192.168.3.83",
             "last_pair_port": "",
             "last_pair_code": "",
@@ -97,6 +119,7 @@ class SM0App:
             self.settings["force_desktop"] = self.desktop_var.get()
             self.settings["auto_mirror_on_connect"] = self.auto_mirror_var.get()
             self.settings["borderless"] = self.borderless_var.get()
+            self.settings["minimize_to_tray"] = self.minimize_tray_var.get()
             self.settings["last_ip"] = self.ip_entry.get().strip()
             self.settings["last_pair_port"] = self.pair_port_entry.get().strip()
             self.settings["last_pair_code"] = self.pair_code_entry.get().strip()
@@ -387,7 +410,15 @@ class SM0App:
             text="Modo DeX",
             variable=self.desktop_var
         )
-        self.desktop_checkbox.pack(side="left")
+        self.desktop_checkbox.pack(side="left", padx=(0, 15))
+
+        self.minimize_tray_var = ctk.BooleanVar(value=self.settings.get("minimize_to_tray", True))
+        self.minimize_tray_checkbox = ctk.CTkCheckBox(
+            toggles_row2, 
+            text="Minimizar p/ bandeja",
+            variable=self.minimize_tray_var
+        )
+        self.minimize_tray_checkbox.pack(side="left")
         
         # === SEÇÃO 5: BOTÕES DE AÇÃO E LOG ===
         control_frame = ctk.CTkFrame(self.root)
@@ -865,6 +896,10 @@ class SM0App:
                 self.stop_button.configure(state="normal")
                 self.refresh_devices_async()
                 
+                # Minimizar para a bandeja da barra de tarefas se ativado
+                if hasattr(self, 'minimize_tray_var') and self.minimize_tray_var.get():
+                    self.root.after(500, self.minimize_to_tray)
+
                 # Iniciar monitoramento de encerramento
                 self.reconnect_thread = threading.Thread(target=self._monitor_session, daemon=True)
                 self.reconnect_thread.start()
@@ -891,6 +926,8 @@ class SM0App:
                 self.connect_button.configure(state="normal", text="▶ Conectar")
                 self.stop_button.configure(state="disabled")
                 self.refresh_devices_async()
+                # Restaurar a janela da bandeja para que o usuário veja o painel
+                self.root.after(0, self.restore_from_tray)
                 break
 
     def stop_connection(self):
@@ -907,12 +944,32 @@ class SM0App:
             self.connect_button.configure(state="normal", text="▶ Conectar")
             self.stop_button.configure(state="disabled")
             self.refresh_devices_async()
+            self.root.after(0, self.restore_from_tray)
         except Exception as e:
             self.update_status(f"Erro ao encerrar: {str(e)}")
             
+    def minimize_to_tray(self):
+        """Minimiza e esconde a interface gráfica para a bandeja da barra de tarefas."""
+        if hasattr(self, 'minimize_tray_var') and not self.minimize_tray_var.get():
+            return
+        self.root.withdraw()
+        if hasattr(self, 'tray_manager') and self.tray_manager:
+            self.tray_manager.notify(
+                "SM0 em Segundo Plano",
+                "O painel foi minimizado para a bandeja da barra de tarefas. Clique duas vezes no ícone para restaurar."
+            )
+
+    def restore_from_tray(self):
+        """Restaura a janela do SM0 a partir da bandeja do sistema."""
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
     def on_closing(self):
         """Salva configurações e limpa processos ao sair"""
         self.save_settings()
+        if hasattr(self, 'tray_manager') and self.tray_manager:
+            self.tray_manager.stop()
         if hasattr(self, 'window_controller') and self.window_controller:
             self.window_controller.stop()
         if self.qr_pairer:
