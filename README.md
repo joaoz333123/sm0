@@ -80,10 +80,12 @@ Se preferir conectar manualmente ou utilizar PIN de pareamento:
 
 ---
 
-## ⌨️ Atalhos Úteis do Scrcpy durante o Espelhamento (Modificador: `Ctrl da Esquerda`)
+## 🖱️ Controles de Mouse & Atalhos no Espelhamento (com `Ctrl da Esquerda`)
 
-| Atalho | Ação |
+| Ação / Atalho | Como Fazer |
 | :--- | :--- |
+| 🪟 **Mover janela (Sem Bordas)** | **Segure `Ctrl` + Arraste com o Botão Esquerdo do Mouse** |
+| 📐 **Redimensionar (Sem Bordas)** | **Segure `Ctrl` + Arraste com o Botão Direito do Mouse** (para baixo aumenta, para cima diminui) |
 | `Ctrl` + `Q` | Fechar / Encerrar a janela do espelhamento (libera o seu `Alt+Q` no Windows!) |
 | `Ctrl` + `F` | Alternar tela cheia (Fullscreen) |
 | `Ctrl` + `O` | Ligar/desligar a tela do celular (mantendo espelhamento) |
@@ -91,8 +93,8 @@ Se preferir conectar manualmente ou utilizar PIN de pareamento:
 | `Ctrl` + `B` ou `Botão Direito do Mouse` | Botão Voltar (Back) |
 | `Ctrl` + `S` | Alternar aplicativos recentes |
 | `Ctrl` + `Up` / `Down` | Aumentar / Diminuir volume |
-| `Win` + `Setas` | Mover / Encaixar janela na tela (útil no modo sem bordas) |
 | `Ctrl` + `V` no PC | Cola a área de transferência do PC no Android |
+| `Win` + `Setas` | Mover / Encaixar janela nos cantos da tela |
 
 ---
 

@@ -13,6 +13,7 @@ from adb_qr_pair import (
     get_mdns_connect_services,
     quick_connect_adb
 )
+from window_controller import WindowDragResizeController
 
 # Configuração do tema
 ctk.set_appearance_mode("dark")
@@ -47,6 +48,10 @@ class SM0App:
         # Atualizar status dos dispositivos na inicialização
         self.root.after(300, self.refresh_devices_async)
         
+        # Controlador nativo de arraste (Ctrl + Botão Esquerdo) e redimensionamento (Ctrl + Botão Direito)
+        self.window_controller = WindowDragResizeController(lambda: self.scrcpy_process)
+        self.window_controller.start()
+
         # Iniciar autodescoberta e QR Code automaticamente
         self.root.after(200, self.start_auto_discovery_and_qr)
         
@@ -908,6 +913,8 @@ class SM0App:
     def on_closing(self):
         """Salva configurações e limpa processos ao sair"""
         self.save_settings()
+        if hasattr(self, 'window_controller') and self.window_controller:
+            self.window_controller.stop()
         if self.qr_pairer:
             self.qr_pairer.stop()
         if self.is_connected:
