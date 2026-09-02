@@ -377,28 +377,42 @@ class SM0App:
         button_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
         button_frame.pack(padx=10, pady=8, fill="x")
         
+        # Botão principal para Reabrir a Tela do Espelhamento a qualquer momento
+        self.reopen_button = ctk.CTkButton(
+            button_frame,
+            text="📺 Reabrir Tela Espelhada",
+            command=self.reopen_mirroring,
+            fg_color="#1F6FEB",
+            hover_color="#388BFD",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            height=40
+        )
+        self.reopen_button.pack(side="left", padx=4, fill="x", expand=True)
+        
         self.connect_button = ctk.CTkButton(
             button_frame,
-            text="▶ Conectar e Espelhar",
+            text="▶ Conectar",
             command=self.connect_device,
             fg_color="#2EA043",
             hover_color="#238636",
-            font=ctk.CTkFont(size=14, weight="bold"),
-            height=38
+            font=ctk.CTkFont(size=13, weight="bold"),
+            height=40,
+            width=120
         )
-        self.connect_button.pack(side="left", padx=5, fill="x", expand=True)
+        self.connect_button.pack(side="left", padx=4)
         
         self.stop_button = ctk.CTkButton(
             button_frame,
-            text="⏹ Desconectar",
+            text="⏹ Encerrar",
             command=self.stop_connection,
             fg_color="#DA3633",
             hover_color="#B62324",
-            font=ctk.CTkFont(size=14, weight="bold"),
+            font=ctk.CTkFont(size=13, weight="bold"),
             state="disabled",
-            height=38
+            height=40,
+            width=110
         )
-        self.stop_button.pack(side="right", padx=5, fill="x", expand=True)
+        self.stop_button.pack(side="right", padx=4)
         
         # Status Box
         status_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
@@ -607,14 +621,15 @@ class SM0App:
                     text_color="#3FB950"
                 )
                 if not self.is_connected:
-                    self.connect_button.configure(state="normal", text="▶ Iniciar Espelhamento (Dispositivo Pronto)")
+                    self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+                    self.connect_button.configure(state="normal", text="▶ Conectar")
             else:
                 self.device_status_label.configure(
                     text="⚪ Nenhum dispositivo conectado ao ADB.",
                     text_color="gray"
                 )
                 if not self.is_connected:
-                    self.connect_button.configure(state="normal", text="▶ Conectar e Espelhar")
+                    self.connect_button.configure(state="normal", text="▶ Conectar")
         threading.Thread(target=_task, daemon=True).start()
 
     def reset_adb(self):
@@ -671,6 +686,35 @@ class SM0App:
 
         return base_cmd
     
+    def reopen_mirroring(self):
+        """Reabre a tela do espelhamento instantaneamente caso tenha sido fechada."""
+        self.update_status("Reabrindo tela de espelhamento...")
+        self.reopen_button.configure(state="disabled")
+
+        def _task():
+            try:
+                devices = self.get_adb_devices()
+                target = None
+                if devices:
+                    target = devices[0]["serial"]
+                else:
+                    ip = self.ip_entry.get().strip()
+                    port = self.connect_port_entry.get().strip()
+                    if ip and port:
+                        target = f"{ip}:{port}"
+                        quick_connect_adb("scrcpy/adb.exe", target, timeout=3)
+                
+                if target:
+                    self.start_mirroring(target)
+                else:
+                    self.root.after(0, lambda: self.update_status("Nenhum aparelho conectado. Clique em Conectar."))
+                    self.root.after(0, lambda: self.reopen_button.configure(state="normal"))
+            except Exception as e:
+                self.root.after(0, lambda: self.update_status(f"Erro ao reabrir: {e}"))
+                self.root.after(0, lambda: self.reopen_button.configure(state="normal"))
+
+        threading.Thread(target=_task, daemon=True).start()
+
     def connect_device(self):
         """Inicia o processo manual de conexão usando os dados preenchidos"""
         self.connect_button.configure(state="disabled", text="▶ Conectando...")
@@ -790,7 +834,8 @@ class SM0App:
                 self.update_status(f"✅ Espelhamento ativo em {target_serial}!")
                 self.is_connected = True
                 self.should_reconnect = True
-                self.connect_button.configure(state="disabled", text="▶ Espelhamento Ativo")
+                self.reopen_button.configure(state="disabled", text="📺 Espelhamento Ativo")
+                self.connect_button.configure(state="disabled", text="▶ Conectar")
                 self.stop_button.configure(state="normal")
                 self.refresh_devices_async()
                 
@@ -801,20 +846,23 @@ class SM0App:
                 stdout, stderr = self.scrcpy_process.communicate()
                 err = stderr.decode('utf-8', errors='ignore') if stderr else stdout.decode('utf-8', errors='ignore')
                 self.update_status(f"Erro ao iniciar scrcpy: {err.strip()}")
-                self.connect_button.configure(state="normal", text="▶ Conectar e Espelhar")
+                self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+                self.connect_button.configure(state="normal", text="▶ Conectar")
         except Exception as e:
             self.update_status(f"Erro ao iniciar espelhamento: {str(e)}")
-            self.connect_button.configure(state="normal", text="▶ Conectar e Espelhar")
+            self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+            self.connect_button.configure(state="normal", text="▶ Conectar")
     
     def _monitor_session(self):
         """Monitora se a janela do scrcpy foi fechada pelo usuário"""
         while self.should_reconnect and self.is_connected:
             time.sleep(2)
             if self.scrcpy_process and self.scrcpy_process.poll() is not None:
-                self.update_status("Janela de espelhamento fechada. Pronto para reconectar.")
+                self.update_status("Janela de espelhamento fechada. Clique em '📺 Reabrir Tela Espelhada' para voltar.")
                 self.is_connected = False
                 self.should_reconnect = False
-                self.connect_button.configure(state="normal", text="▶ Iniciar Espelhamento (Dispositivo Pronto)")
+                self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+                self.connect_button.configure(state="normal", text="▶ Conectar")
                 self.stop_button.configure(state="disabled")
                 self.refresh_devices_async()
                 break
@@ -829,7 +877,8 @@ class SM0App:
             
             self.is_connected = False
             self.update_status("Espelhamento encerrado.")
-            self.connect_button.configure(state="normal", text="▶ Iniciar Espelhamento")
+            self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+            self.connect_button.configure(state="normal", text="▶ Conectar")
             self.stop_button.configure(state="disabled")
             self.refresh_devices_async()
         except Exception as e:
