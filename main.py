@@ -699,6 +699,9 @@ class SM0App:
         if self.borderless_var.get():
             base_cmd.append("--window-borderless")
 
+        # Modificador de atalhos (Ctrl da esquerda - LCtrl) para não conflitar com atalhos do Windows (ex: Alt+Q)
+        base_cmd.extend(["--shortcut-mod=lctrl"])
+
         # Otimizações de latência zero (sem buffer no player scrcpy 3)
         base_cmd.extend(["--video-buffer=0"])
 

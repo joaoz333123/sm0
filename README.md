@@ -80,16 +80,18 @@ Se preferir conectar manualmente ou utilizar PIN de pareamento:
 
 ---
 
-## ⌨️ Atalhos Úteis do Scrcpy durante o Espelhamento
+## ⌨️ Atalhos Úteis do Scrcpy durante o Espelhamento (Modificador: `Ctrl da Esquerda`)
 
 | Atalho | Ação |
 | :--- | :--- |
-| `Alt` + `F` | Alternar tela cheia (Fullscreen) |
-| `Alt` + `O` | Ligar/desligar a tela do celular |
-| `Alt` + `H` | Botão Home (Início) |
-| `Alt` + `B` ou `Botão Direito do Mouse` | Botão Voltar (Back) |
-| `Alt` + `S` | Alternar aplicativos recentes |
-| `Alt` + `Up` / `Down` | Aumentar / Diminuir volume |
+| `Ctrl` + `Q` | Fechar / Encerrar a janela do espelhamento (libera o seu `Alt+Q` no Windows!) |
+| `Ctrl` + `F` | Alternar tela cheia (Fullscreen) |
+| `Ctrl` + `O` | Ligar/desligar a tela do celular (mantendo espelhamento) |
+| `Ctrl` + `H` | Botão Home (Início) |
+| `Ctrl` + `B` ou `Botão Direito do Mouse` | Botão Voltar (Back) |
+| `Ctrl` + `S` | Alternar aplicativos recentes |
+| `Ctrl` + `Up` / `Down` | Aumentar / Diminuir volume |
+| `Win` + `Setas` | Mover / Encaixar janela na tela (útil no modo sem bordas) |
 | `Ctrl` + `V` no PC | Cola a área de transferência do PC no Android |
 
 ---
