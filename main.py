@@ -56,7 +56,7 @@ class SM0App:
             "resolution": "Original",
             "fps": "60",
             "bitrate": "12",
-            "enable_audio": True,
+            "enable_audio": False,
             "turn_off_screen": False,
             "stay_awake": True,
             "force_desktop": False,
@@ -338,10 +338,10 @@ class SM0App:
         )
         self.auto_mirror_checkbox.pack(side="left", padx=(0, 15))
 
-        self.audio_var = ctk.BooleanVar(value=self.settings.get("enable_audio", True))
+        self.audio_var = ctk.BooleanVar(value=self.settings.get("enable_audio", False))
         self.audio_checkbox = ctk.CTkCheckBox(
             toggles_frame, 
-            text="Áudio Nativo",
+            text="Áudio no PC",
             variable=self.audio_var
         )
         self.audio_checkbox.pack(side="left", padx=(0, 15))
@@ -666,6 +666,9 @@ class SM0App:
         if self.stay_awake_var.get():
             base_cmd.append("--stay-awake")
         
+        # Otimizações de latência zero (sem buffer no player scrcpy 3)
+        base_cmd.extend(["--video-buffer=0"])
+
         return base_cmd
     
     def connect_device(self):
