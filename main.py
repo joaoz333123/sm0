@@ -61,6 +61,7 @@ class SM0App:
             "stay_awake": True,
             "force_desktop": False,
             "auto_mirror_on_connect": True,
+            "borderless": False,
             "last_ip": "192.168.3.83",
             "last_pair_port": "",
             "last_pair_code": "",
@@ -90,6 +91,7 @@ class SM0App:
             self.settings["stay_awake"] = self.stay_awake_var.get()
             self.settings["force_desktop"] = self.desktop_var.get()
             self.settings["auto_mirror_on_connect"] = self.auto_mirror_var.get()
+            self.settings["borderless"] = self.borderless_var.get()
             self.settings["last_ip"] = self.ip_entry.get().strip()
             self.settings["last_pair_port"] = self.pair_port_entry.get().strip()
             self.settings["last_pair_code"] = self.pair_code_entry.get().strip()
@@ -326,29 +328,41 @@ class SM0App:
         self.bitrate_entry.pack(side="left")
         self.bitrate_entry.insert(0, str(self.settings.get("bitrate", "12")))
         
-        # Toggles adicionais
-        toggles_frame = ctk.CTkFrame(config_frame, fg_color="transparent")
-        toggles_frame.pack(padx=10, pady=5, fill="x")
+        # Toggles adicionais - Linha 1
+        toggles_row1 = ctk.CTkFrame(config_frame, fg_color="transparent")
+        toggles_row1.pack(padx=10, pady=(4, 2), fill="x")
         
         self.auto_mirror_var = ctk.BooleanVar(value=self.settings.get("auto_mirror_on_connect", True))
         self.auto_mirror_checkbox = ctk.CTkCheckBox(
-            toggles_frame,
+            toggles_row1,
             text="Auto-espelhar",
             variable=self.auto_mirror_var
         )
         self.auto_mirror_checkbox.pack(side="left", padx=(0, 15))
 
+        self.borderless_var = ctk.BooleanVar(value=self.settings.get("borderless", False))
+        self.borderless_checkbox = ctk.CTkCheckBox(
+            toggles_row1,
+            text="Sem bordas (Frameless)",
+            variable=self.borderless_var
+        )
+        self.borderless_checkbox.pack(side="left", padx=(0, 15))
+
         self.audio_var = ctk.BooleanVar(value=self.settings.get("enable_audio", False))
         self.audio_checkbox = ctk.CTkCheckBox(
-            toggles_frame, 
+            toggles_row1, 
             text="Áudio no PC",
             variable=self.audio_var
         )
         self.audio_checkbox.pack(side="left", padx=(0, 15))
+
+        # Toggles adicionais - Linha 2
+        toggles_row2 = ctk.CTkFrame(config_frame, fg_color="transparent")
+        toggles_row2.pack(padx=10, pady=(2, 6), fill="x")
         
         self.turn_off_var = ctk.BooleanVar(value=self.settings.get("turn_off_screen", False))
         self.turn_off_checkbox = ctk.CTkCheckBox(
-            toggles_frame, 
+            toggles_row2, 
             text="Apagar tela celular",
             variable=self.turn_off_var
         )
@@ -356,7 +370,7 @@ class SM0App:
         
         self.stay_awake_var = ctk.BooleanVar(value=self.settings.get("stay_awake", True))
         self.stay_awake_checkbox = ctk.CTkCheckBox(
-            toggles_frame, 
+            toggles_row2, 
             text="Manter ativo",
             variable=self.stay_awake_var
         )
@@ -364,7 +378,7 @@ class SM0App:
         
         self.desktop_var = ctk.BooleanVar(value=self.settings.get("force_desktop", False))
         self.desktop_checkbox = ctk.CTkCheckBox(
-            toggles_frame, 
+            toggles_row2, 
             text="Modo DeX",
             variable=self.desktop_var
         )
@@ -681,6 +695,10 @@ class SM0App:
         if self.stay_awake_var.get():
             base_cmd.append("--stay-awake")
         
+        # Janela sem bordas (Frameless)
+        if self.borderless_var.get():
+            base_cmd.append("--window-borderless")
+
         # Otimizações de latência zero (sem buffer no player scrcpy 3)
         base_cmd.extend(["--video-buffer=0"])
 
