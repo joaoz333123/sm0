@@ -9,6 +9,7 @@ import re
 import socket
 import string
 import subprocess
+import sys
 import threading
 import time
 from typing import Callable, Optional, List, Dict
@@ -16,12 +17,21 @@ from PIL import Image
 import qrcode
 from zeroconf import ServiceBrowser, ServiceListener, Zeroconf, ServiceInfo
 
+# Flags para execução 100% silenciosa em segundo plano no Windows (evita abrir abas/janelas do Terminal)
+SUBPROCESS_FLAGS = {}
+if sys.platform == "win32":
+    SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = subprocess.SW_HIDE
+    SUBPROCESS_FLAGS["startupinfo"] = _si
+
 
 def get_active_adb_devices(adb_path: str = "scrcpy/adb.exe") -> List[Dict[str, str]]:
     """Retorna a lista de dispositivos atualmente autorizados e conectados no ADB."""
     devices = []
     try:
-        res = subprocess.run([adb_path, "devices", "-l"], capture_output=True, text=True, timeout=4)
+        res = subprocess.run([adb_path, "devices", "-l"], capture_output=True, text=True, timeout=4, **SUBPROCESS_FLAGS)
         for line in res.stdout.strip().splitlines()[1:]:
             line = line.strip()
             if not line or line.startswith("List of devices"):
@@ -41,7 +51,7 @@ def get_mdns_connect_services(adb_path: str = "scrcpy/adb.exe") -> List[Dict[str
     """Consulta 'adb mdns services' para encontrar celulares com depuração ativa na rede."""
     services = []
     try:
-        res = subprocess.run([adb_path, "mdns", "services"], capture_output=True, text=True, timeout=3)
+        res = subprocess.run([adb_path, "mdns", "services"], capture_output=True, text=True, timeout=3, **SUBPROCESS_FLAGS)
         for line in res.stdout.splitlines():
             if "_adb-tls-connect" in line:
                 parts = line.split()
@@ -64,7 +74,7 @@ def get_mdns_connect_services(adb_path: str = "scrcpy/adb.exe") -> List[Dict[str
 def quick_connect_adb(adb_path: str, endpoint: str, timeout: int = 5) -> bool:
     """Tenta conexão rápida ao IP:porta via adb connect."""
     try:
-        res = subprocess.run([adb_path, "connect", endpoint], capture_output=True, text=True, timeout=timeout)
+        res = subprocess.run([adb_path, "connect", endpoint], capture_output=True, text=True, timeout=timeout, **SUBPROCESS_FLAGS)
         out = (res.stdout + res.stderr).lower()
         if "connected to" in out or "already connected" in out:
             return True
@@ -275,7 +285,7 @@ class ADBQRPairer:
                 pair_target = f"{ip}:{pair_port}"
                 cmd = [self.adb_path, "pair", pair_target, self.password]
                 
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=15, **SUBPROCESS_FLAGS)
                 output = (res.stdout + " " + res.stderr).strip()
 
                 if res.returncode != 0 and "successfully paired" not in output.lower():
@@ -285,7 +295,8 @@ class ADBQRPairer:
                         input=f"{self.password}\n",
                         text=True,
                         capture_output=True,
-                        timeout=15
+                        timeout=15,
+                        **SUBPROCESS_FLAGS
                     )
                     output2 = (res2.stdout + " " + res2.stderr).strip()
                     if res2.returncode != 0 and "successfully paired" not in output2.lower():
@@ -331,7 +342,8 @@ class ADBQRPairer:
                 [self.adb_path, "connect", target_to_connect],
                 capture_output=True,
                 text=True,
-                timeout=10
+                timeout=10,
+                **SUBPROCESS_FLAGS
             )
             out = (conn_res.stdout + conn_res.stderr).strip()
             

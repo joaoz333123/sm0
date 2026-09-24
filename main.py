@@ -11,12 +11,22 @@ except Exception:
 import customtkinter as ctk
 import json
 import subprocess
+import sys
 import threading
 import time
 import os
 import re
 from pathlib import Path
 from PIL import Image
+
+# Flags para execução 100% silenciosa em segundo plano no Windows (evita abrir abas/janelas do Terminal)
+SUBPROCESS_FLAGS = {}
+if sys.platform == "win32":
+    SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = subprocess.SW_HIDE
+    SUBPROCESS_FLAGS["startupinfo"] = _si
 from adb_qr_pair import (
     ADBQRPairer,
     get_active_adb_devices,
@@ -687,9 +697,9 @@ class SM0App:
         def _reset_task():
             self.update_status("Resetando conexões do ADB...")
             try:
-                subprocess.run(["scrcpy/adb.exe", "disconnect"], capture_output=True, timeout=5)
-                subprocess.run(["scrcpy/adb.exe", "kill-server"], capture_output=True, timeout=5)
-                subprocess.run(["scrcpy/adb.exe", "start-server"], capture_output=True, timeout=5)
+                subprocess.run(["scrcpy/adb.exe", "disconnect"], capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
+                subprocess.run(["scrcpy/adb.exe", "kill-server"], capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
+                subprocess.run(["scrcpy/adb.exe", "start-server"], capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
                 self.update_status("ADB reiniciado com sucesso!")
                 self.refresh_devices_async()
                 # Reiniciar descoberta e escuta
@@ -813,7 +823,8 @@ class SM0App:
                         pair_cmd,
                         capture_output=True,
                         text=True,
-                        timeout=15
+                        timeout=15,
+                        **SUBPROCESS_FLAGS
                     )
                     if pair_res.returncode != 0 and "successfully paired" not in (pair_res.stdout + pair_res.stderr).lower():
                         err_msg = pair_res.stderr.strip() or pair_res.stdout.strip()
@@ -830,7 +841,8 @@ class SM0App:
                     ["scrcpy/adb.exe", "connect", target_endpoint],
                     capture_output=True,
                     text=True,
-                    timeout=15
+                    timeout=15,
+                    **SUBPROCESS_FLAGS
                 )
                 
                 conn_output = (conn_res.stdout + conn_res.stderr).lower()
@@ -867,7 +879,7 @@ class SM0App:
                         ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "enable_freeform_support", "1"]
                     ]
                     for cmd in desktop_commands:
-                        subprocess.run(cmd, capture_output=True, timeout=5)
+                        subprocess.run(cmd, capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
                 except Exception:
                     pass
 
@@ -882,7 +894,8 @@ class SM0App:
                 scrcpy_cmd,
                 cwd=os.getcwd(),
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                **SUBPROCESS_FLAGS
             )
             
             time.sleep(1.2)

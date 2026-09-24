@@ -12,6 +12,14 @@ INV_PATH = os.path.join(PROJECT_DIR, "inventario_backup", "inventario_arquivos.m
 DEST_BASE = os.path.join(PROJECT_DIR, "inventario_backup", "arquivos_copiados")
 DEVICE_DEFAULT = "192.168.3.5:45537"
 
+SUBPROCESS_FLAGS = {}
+if sys.platform == "win32":
+    SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = subprocess.SW_HIDE
+    SUBPROCESS_FLAGS["startupinfo"] = _si
+
 os.makedirs(DEST_BASE, exist_ok=True)
 
 def format_size(bytes_size):
@@ -22,7 +30,7 @@ def format_size(bytes_size):
     return f"{bytes_size:.2f} PB"
 
 def get_connected_device():
-    res = subprocess.run([ADB_PATH, "devices"], capture_output=True, text=True, errors="ignore")
+    res = subprocess.run([ADB_PATH, "devices"], capture_output=True, text=True, errors="ignore", **SUBPROCESS_FLAGS)
     lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
     for line in lines[1:]:
         parts = line.split()
@@ -121,7 +129,7 @@ def main():
             
         # Executa o pull sem fio
         cmd = [ADB_PATH, "-s", device, "pull", remote_file, local_file]
-        res = subprocess.run(cmd, capture_output=True, text=True, errors="ignore")
+        res = subprocess.run(cmd, capture_output=True, text=True, errors="ignore", **SUBPROCESS_FLAGS)
         
         if res.returncode == 0 and os.path.exists(local_file):
             bytes_transferred += file_size

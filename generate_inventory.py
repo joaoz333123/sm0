@@ -1,6 +1,15 @@
 import os
 import subprocess
+import sys
 from datetime import datetime
+
+SUBPROCESS_FLAGS = {}
+if sys.platform == "win32":
+    SUBPROCESS_FLAGS["creationflags"] = subprocess.CREATE_NO_WINDOW
+    _si = subprocess.STARTUPINFO()
+    _si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    _si.wShowWindow = subprocess.SW_HIDE
+    SUBPROCESS_FLAGS["startupinfo"] = _si
 
 ADB_PATH = os.path.abspath(r"scrcpy\adb.exe")
 DEVICE = "192.168.3.5:45537"
@@ -34,7 +43,7 @@ def format_size(bytes_size):
 
 def run_adb_shell(cmd):
     full_cmd = [ADB_PATH, "-s", DEVICE, "shell", cmd]
-    result = subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore")
+    result = subprocess.run(full_cmd, capture_output=True, text=True, encoding="utf-8", errors="ignore", **SUBPROCESS_FLAGS)
     return result.stdout
 
 print("Iniciando coleta detalhada de inventário...")
