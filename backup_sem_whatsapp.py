@@ -2,29 +2,17 @@ import os
 import sys
 import subprocess
 import time
-from datetime import datetime
 
-# Caminhos e configurações
+# Força exibição imediata de cada linha no terminal sem esperar buffer
+sys.stdout.reconfigure(line_buffering=True, encoding="utf-8")
+
 PROJECT_DIR = os.path.dirname(os.path.abspath(__file__))
 ADB_PATH = os.path.join(PROJECT_DIR, "scrcpy", "adb.exe")
-DEVICE_TARGET = "192.168.3.5:45537"
-
-# Pasta de destino dentro do inventário
+INV_PATH = os.path.join(PROJECT_DIR, "inventario_backup", "inventario_arquivos.md")
 DEST_BASE = os.path.join(PROJECT_DIR, "inventario_backup", "arquivos_copiados")
-os.makedirs(DEST_BASE, exist_ok=True)
+DEVICE_DEFAULT = "192.168.3.5:45537"
 
-# Pastas autorizadas para cópia (TOTALMENTE EXCLUÍDO O WHATSAPP)
-TARGET_FOLDERS = [
-    "/sdcard/DCIM",
-    "/sdcard/Pictures",
-    "/sdcard/Movies",
-    "/sdcard/Download",
-    "/sdcard/Documents",
-    "/sdcard/Voo",
-    "/sdcard/Recordings",
-    "/sdcard/Music",
-    "/sdcard/X Video Player"
-]
+os.makedirs(DEST_BASE, exist_ok=True)
 
 def format_size(bytes_size):
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
@@ -39,79 +27,78 @@ def get_connected_device():
     for line in lines[1:]:
         parts = line.split()
         if len(parts) >= 2 and parts[1] == "device":
-            if parts[0] == DEVICE_TARGET:
-                return parts[0]
-            # Se mudou de porta mas é o mesmo IP
-            if parts[0].startswith("192.168.3.5"):
-                return parts[0]
-    return DEVICE_TARGET
+            return parts[0]
+    return DEVICE_DEFAULT
 
-def collect_file_list(device):
-    print("=" * 70)
-    print(" 🔍 MAPEANDO ARQUIVOS NO CELULAR (EXCETO WHATSAPP)...")
-    print("=" * 70)
+def load_files_from_inventory():
+    files = []
+    current_folder = None
     
-    file_list = []
-    
-    for folder in TARGET_FOLDERS:
-        print(f" -> Lendo diretório: {folder}")
-        cmd = [ADB_PATH, "-s", device, "shell", f"ls -laR '{folder}' 2>/dev/null"]
-        res = subprocess.run(cmd, capture_output=True, text=True, errors="ignore")
+    if not os.path.exists(INV_PATH):
+        return []
         
-        current_dir = folder
-        for line in res.stdout.splitlines():
+    with open(INV_PATH, "r", encoding="utf-8") as f:
+        for line in f:
             line = line.strip()
-            if not line:
-                continue
-            if line.endswith(":") and ("/" in line):
-                current_dir = line[:-1]
-                continue
-            
-            parts = line.split(maxsplit=7)
-            if len(parts) >= 8 and parts[0].startswith("-"):
-                try:
-                    size = int(parts[4])
-                    fname = parts[7]
-                    if fname in [".", "..", ".nomedia"]:
-                        continue
-                    if ".thumbnails" in current_dir:
-                        continue
+            if line.startswith("### 📁"):
+                parts = line.split("`")
+                if len(parts) >= 2:
+                    current_folder = parts[1]
+            elif line.startswith("|") and current_folder and "WhatsApp" not in current_folder:
+                cols = [c.strip() for c in line.split("|")]
+                if len(cols) >= 6 and cols[1] not in ["Nome do Arquivo", ""] and not cols[1].startswith(":"):
+                    fname = cols[1]
+                    sub = cols[2].replace("`", "").strip()
+                    fmt = cols[4]
+                    size = int(cols[5]) if cols[5].isdigit() else 0
                     
-                    full_remote_path = f"{current_dir}/{fname}"
-                    # Calcular caminho relativo local
-                    rel_path = full_remote_path.replace("/sdcard/", "").replace("/", os.sep)
-                    local_dest_path = os.path.join(DEST_BASE, rel_path)
+                    # Ignorar arquivos temporários zerados do cache de câmera
+                    if fname.startswith(".temp-") and size == 0:
+                        continue
+                        
+                    sub_clean = sub.strip("/\\")
+                    if sub_clean:
+                        remote_path = f"{current_folder}/{sub_clean}/{fname}"
+                        rel_dir = os.path.join(current_folder.replace("/sdcard/", ""), sub_clean)
+                    else:
+                        remote_path = f"{current_folder}/{fname}"
+                        rel_dir = current_folder.replace("/sdcard/", "")
+                        
+                    local_dest = os.path.join(DEST_BASE, rel_dir, fname)
                     
-                    file_list.append({
-                        "remote": full_remote_path,
-                        "local": local_dest_path,
+                    files.append({
+                        "remote": remote_path,
+                        "local": local_dest,
+                        "rel_dir": rel_dir,
                         "name": fname,
                         "size": size,
-                        "size_fmt": format_size(size)
+                        "size_fmt": fmt
                     })
-                except (ValueError, IndexError):
-                    continue
-                    
-    return file_list
+    return files
 
-def run_backup():
-    device = get_connected_device()
-    print(f"\nDispositivo alvo: {device}")
-    print(f"Pasta de destino local: {DEST_BASE}\n")
-    print("⚠️  AVISO DE SEGURANÇA: MODO ESTREITAMENTE LEITURA (PULL).")
-    print("   Nenhum arquivo será excluído, movido ou alterado no seu celular.\n")
+def main():
+    print("=" * 75, flush=True)
+    print(" 🚀 INICIANDO BACKUP SEGURO SAMSUNG S22 (SEM WHATSAPP)", flush=True)
+    print("=" * 75, flush=True)
     
-    files = collect_file_list(device)
+    device = get_connected_device()
+    print(f"📱 Dispositivo conectado via Wi-Fi: {device}", flush=True)
+    print(f"📁 Pasta de destino no seu PC: {DEST_BASE}", flush=True)
+    print("🔒 MODO ESTREITAMENTE LEITURA: Nenhum arquivo será apagado do celular.", flush=True)
+    print("-" * 75, flush=True)
+    print("📋 Carregando lista de arquivos do inventário...", flush=True)
+    
+    files = load_files_from_inventory()
     total_files = len(files)
     total_bytes = sum(f["size"] for f in files)
     
     if total_files == 0:
-        print("❌ Nenhum arquivo encontrado ou aparelho desconectado.")
+        print("❌ Nenhum arquivo encontrado no inventário.", flush=True)
         return
         
-    print("\n" + "=" * 70)
-    print(f" 📦 INÍCIO DO BACKUP: {total_files} arquivos | {format_size(total_bytes)}")
-    print("=" * 70 + "\n")
+    print(f"✅ Total a processar: {total_files} arquivos | {format_size(total_bytes)}", flush=True)
+    print("=" * 75, flush=True)
+    print("LISTA DE ARQUIVOS SENDO COPIADOS EM TEMPO REAL:\n", flush=True)
     
     bytes_transferred = 0
     start_time = time.time()
@@ -121,36 +108,34 @@ def run_backup():
         local_file = item["local"]
         file_size = item["size"]
         size_fmt = item["size_fmt"]
+        rel_dir = item["rel_dir"]
         
-        # Cria as subpastas locais se não existirem
         os.makedirs(os.path.dirname(local_file), exist_ok=True)
+        pct = (idx / total_files) * 100
         
-        # Verificar se o arquivo já foi copiado anteriormente com tamanho correto
+        # Se já existe com mesmo tamanho, pula
         if os.path.exists(local_file) and os.path.getsize(local_file) == file_size:
             bytes_transferred += file_size
-            pct = (idx / total_files) * 100
-            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ⏩ [JÁ EXISTE] {item['name']} ({size_fmt})")
+            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ⏩ [JÁ EXISTE] {item['name']} ({size_fmt})", flush=True)
             continue
             
-        pct = (idx / total_files) * 100
-        print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ⏳ Copiando: {item['name']} ({size_fmt})...", end="\r")
-        
+        # Executa o pull sem fio
         cmd = [ADB_PATH, "-s", device, "pull", remote_file, local_file]
         res = subprocess.run(cmd, capture_output=True, text=True, errors="ignore")
         
         if res.returncode == 0 and os.path.exists(local_file):
             bytes_transferred += file_size
-            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ✅ [COPIADO] {item['name']} ({size_fmt}) -> {os.path.dirname(local_file)}")
+            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ✅ [COPIADO] {item['name']} ({size_fmt}) -> {rel_dir}", flush=True)
         else:
-            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ⚠️ [ERRO/PULADO] {item['name']} - {res.stderr.strip() or 'Falha'}")
+            print(f"[{idx:4d}/{total_files}] ({pct:5.1f}%) ⚠️ [PULADO/ERRO] {item['name']} - {res.stderr.strip() or 'Erro de leitura'}", flush=True)
             
     elapsed = time.time() - start_time
-    print("\n" + "=" * 70)
-    print(f" 🎉 BACKUP CONCLUÍDO COM SUCESSO!")
-    print(f" - Total processado: {total_files} arquivos ({format_size(bytes_transferred)})")
-    print(f" - Tempo decorrido: {elapsed/60:.1f} minutos")
-    print(f" - Local salvo: {DEST_BASE}")
-    print("=" * 70)
+    print("\n" + "=" * 75, flush=True)
+    print(f"🎉 BACKUP CONCLUÍDO COM SUCESSO!", flush=True)
+    print(f"📊 Total processado: {total_files} arquivos ({format_size(bytes_transferred)})", flush=True)
+    print(f"⏱️ Tempo total: {elapsed/60:.1f} minutos", flush=True)
+    print(f"📂 Local dos arquivos: {DEST_BASE}", flush=True)
+    print("=" * 75, flush=True)
 
 if __name__ == "__main__":
-    run_backup()
+    main()
