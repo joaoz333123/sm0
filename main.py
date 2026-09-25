@@ -1,13 +1,3 @@
-import ctypes
-
-# Ocultar a janela preta do console/terminal imediatamente se aberta via terminal
-try:
-    console_hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-    if console_hwnd:
-        ctypes.windll.user32.ShowWindow(console_hwnd, 0)  # SW_HIDE
-except Exception:
-    pass
-
 import customtkinter as ctk
 import json
 import subprocess
