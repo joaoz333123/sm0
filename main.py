@@ -50,6 +50,7 @@ class SM0App:
         
         # Variáveis de controle
         self.scrcpy_process = None
+        self.scrcpy_log = None
         self.is_connected = False
         self.reconnect_thread = None
         self.should_reconnect = False
@@ -889,13 +890,26 @@ class SM0App:
             # Encerrar processo scrcpy anterior se existente
             if self.scrcpy_process and self.scrcpy_process.poll() is None:
                 self.scrcpy_process.terminate()
+
+            if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
+                try:
+                    self.scrcpy_log.close()
+                except Exception:
+                    pass
+
+            self.scrcpy_log = open("scrcpy.log", "w", encoding="utf-8", errors="ignore")
+            
+            # Para o scrcpy, não passamos startupinfo com SW_HIDE para não ocultar a janela SDL2
+            scrcpy_flags = {}
+            if sys.platform == "win32":
+                scrcpy_flags["creationflags"] = subprocess.CREATE_NO_WINDOW
             
             self.scrcpy_process = subprocess.Popen(
                 scrcpy_cmd,
                 cwd=os.getcwd(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                **SUBPROCESS_FLAGS
+                stdout=self.scrcpy_log,
+                stderr=subprocess.STDOUT,
+                **scrcpy_flags
             )
             
             time.sleep(1.2)
@@ -917,9 +931,16 @@ class SM0App:
                 self.reconnect_thread = threading.Thread(target=self._monitor_session, daemon=True)
                 self.reconnect_thread.start()
             else:
-                stdout, stderr = self.scrcpy_process.communicate()
-                err = stderr.decode('utf-8', errors='ignore') if stderr else stdout.decode('utf-8', errors='ignore')
-                self.update_status(f"Erro ao iniciar scrcpy: {err.strip()}")
+                if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
+                    self.scrcpy_log.flush()
+                err_msg = ""
+                try:
+                    with open("scrcpy.log", "r", encoding="utf-8", errors="ignore") as f:
+                        err_msg = f.read().strip()
+                except Exception:
+                    pass
+                err_summary = err_msg[-250:] if err_msg else "Falha desconhecida"
+                self.update_status(f"Erro ao iniciar scrcpy: {err_summary}")
                 self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
                 self.connect_button.configure(state="normal", text="▶ Conectar")
         except Exception as e:
@@ -950,6 +971,11 @@ class SM0App:
             if self.scrcpy_process:
                 self.scrcpy_process.terminate()
                 self.scrcpy_process = None
+            if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
+                try:
+                    self.scrcpy_log.close()
+                except Exception:
+                    pass
             
             self.is_connected = False
             self.update_status("Espelhamento encerrado.")
@@ -989,6 +1015,14 @@ class SM0App:
             self.qr_pairer.stop()
         if self.is_connected:
             self.stop_connection()
+        elif self.scrcpy_process:
+            self.scrcpy_process.terminate()
+            self.scrcpy_process = None
+        if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
+            try:
+                self.scrcpy_log.close()
+            except Exception:
+                pass
         self.root.destroy()
 
     def run(self):
