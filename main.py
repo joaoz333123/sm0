@@ -46,6 +46,7 @@ class SM0App:
         self.should_reconnect = False
         self.qr_pairer = None
         self.qr_image_tk = None
+        self._mirroring_lock = threading.Lock()
         
         # Carregar configurações
         self.settings_file = Path("settings.json")
@@ -858,85 +859,88 @@ class SM0App:
 
     def start_mirroring(self, target_serial: str):
         """Inicia a sessão de espelhamento com o scrcpy para o serial indicado."""
-        try:
-            self.update_status(f"Conectado a {target_serial}! Abrindo espelhamento...")
-            
-            # 1. Modo desktop se habilitado
-            if self.desktop_var.get():
-                try:
-                    desktop_commands = [
-                        ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "force_desktop_mode_on_external_displays", "1"],
-                        ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "force_resizable_activities", "1"],
-                        ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "enable_freeform_support", "1"]
-                    ]
-                    for cmd in desktop_commands:
-                        subprocess.run(cmd, capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
-                except Exception:
-                    pass
-
-            # 2. Iniciar scrcpy
-            scrcpy_cmd = self.get_scrcpy_command(serial=target_serial)
-            
-            # Encerrar processo scrcpy anterior se existente
-            if self.scrcpy_process and self.scrcpy_process.poll() is None:
-                self.scrcpy_process.terminate()
-
-            if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
-                try:
-                    self.scrcpy_log.close()
-                except Exception:
-                    pass
-
-            self.scrcpy_log = open("scrcpy.log", "w", encoding="utf-8", errors="ignore")
-            
-            # Para o scrcpy, não passamos startupinfo com SW_HIDE para não ocultar a janela SDL2
-            scrcpy_flags = {}
-            if sys.platform == "win32":
-                scrcpy_flags["creationflags"] = subprocess.CREATE_NO_WINDOW
-            
-            self.scrcpy_process = subprocess.Popen(
-                scrcpy_cmd,
-                cwd=os.getcwd(),
-                stdout=self.scrcpy_log,
-                stderr=subprocess.STDOUT,
-                **scrcpy_flags
-            )
-            
-            time.sleep(1.2)
-            
-            if self.scrcpy_process.poll() is None:
-                self.update_status(f"✅ Espelhamento ativo em {target_serial}!")
-                self.is_connected = True
-                self.should_reconnect = True
-                self.reopen_button.configure(state="disabled", text="📺 Espelhamento Ativo")
-                self.connect_button.configure(state="disabled", text="▶ Conectar")
-                self.stop_button.configure(state="normal")
-                self.refresh_devices_async()
+        with self._mirroring_lock:
+            if self.is_connected or (self.scrcpy_process and self.scrcpy_process.poll() is None):
+                return
+            try:
+                self.update_status(f"Conectado a {target_serial}! Abrindo espelhamento...")
                 
-                # Minimizar para a bandeja da barra de tarefas se ativado
-                if hasattr(self, 'minimize_tray_var') and self.minimize_tray_var.get():
-                    self.root.after(500, self.minimize_to_tray)
+                # 1. Modo desktop se habilitado
+                if self.desktop_var.get():
+                    try:
+                        desktop_commands = [
+                            ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "force_desktop_mode_on_external_displays", "1"],
+                            ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "force_resizable_activities", "1"],
+                            ["scrcpy/adb.exe", "-s", target_serial, "shell", "settings", "put", "global", "enable_freeform_support", "1"]
+                        ]
+                        for cmd in desktop_commands:
+                            subprocess.run(cmd, capture_output=True, timeout=5, **SUBPROCESS_FLAGS)
+                    except Exception:
+                        pass
 
-                # Iniciar monitoramento de encerramento
-                self.reconnect_thread = threading.Thread(target=self._monitor_session, daemon=True)
-                self.reconnect_thread.start()
-            else:
+                # 2. Iniciar scrcpy
+                scrcpy_cmd = self.get_scrcpy_command(serial=target_serial)
+                
+                # Encerrar processo scrcpy anterior se existente
+                if self.scrcpy_process and self.scrcpy_process.poll() is None:
+                    self.scrcpy_process.terminate()
+
                 if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
-                    self.scrcpy_log.flush()
-                err_msg = ""
-                try:
-                    with open("scrcpy.log", "r", encoding="utf-8", errors="ignore") as f:
-                        err_msg = f.read().strip()
-                except Exception:
-                    pass
-                err_summary = err_msg[-250:] if err_msg else "Falha desconhecida"
-                self.update_status(f"Erro ao iniciar scrcpy: {err_summary}")
+                    try:
+                        self.scrcpy_log.close()
+                    except Exception:
+                        pass
+
+                self.scrcpy_log = open("scrcpy.log", "w", encoding="utf-8", errors="ignore")
+                
+                # Para o scrcpy, não passamos startupinfo com SW_HIDE para não ocultar a janela SDL2
+                scrcpy_flags = {}
+                if sys.platform == "win32":
+                    scrcpy_flags["creationflags"] = subprocess.CREATE_NO_WINDOW
+                
+                self.scrcpy_process = subprocess.Popen(
+                    scrcpy_cmd,
+                    cwd=os.getcwd(),
+                    stdout=self.scrcpy_log,
+                    stderr=subprocess.STDOUT,
+                    **scrcpy_flags
+                )
+                
+                time.sleep(1.2)
+                
+                if self.scrcpy_process.poll() is None:
+                    self.update_status(f"✅ Espelhamento ativo em {target_serial}!")
+                    self.is_connected = True
+                    self.should_reconnect = True
+                    self.reopen_button.configure(state="disabled", text="📺 Espelhamento Ativo")
+                    self.connect_button.configure(state="disabled", text="▶ Conectar")
+                    self.stop_button.configure(state="normal")
+                    self.refresh_devices_async()
+                    
+                    # Minimizar para a bandeja da barra de tarefas se ativado
+                    if hasattr(self, 'minimize_tray_var') and self.minimize_tray_var.get():
+                        self.root.after(500, self.minimize_to_tray)
+
+                    # Iniciar monitoramento de encerramento
+                    self.reconnect_thread = threading.Thread(target=self._monitor_session, daemon=True)
+                    self.reconnect_thread.start()
+                else:
+                    if hasattr(self, "scrcpy_log") and self.scrcpy_log and not self.scrcpy_log.closed:
+                        self.scrcpy_log.flush()
+                    err_msg = ""
+                    try:
+                        with open("scrcpy.log", "r", encoding="utf-8", errors="ignore") as f:
+                            err_msg = f.read().strip()
+                    except Exception:
+                        pass
+                    err_summary = err_msg[-250:] if err_msg else "Falha desconhecida"
+                    self.update_status(f"Erro ao iniciar scrcpy: {err_summary}")
+                    self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
+                    self.connect_button.configure(state="normal", text="▶ Conectar")
+            except Exception as e:
+                self.update_status(f"Erro ao iniciar espelhamento: {str(e)}")
                 self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
                 self.connect_button.configure(state="normal", text="▶ Conectar")
-        except Exception as e:
-            self.update_status(f"Erro ao iniciar espelhamento: {str(e)}")
-            self.reopen_button.configure(state="normal", text="📺 Reabrir Tela Espelhada")
-            self.connect_button.configure(state="normal", text="▶ Conectar")
     
     def _monitor_session(self):
         """Monitora se a janela do scrcpy foi fechada pelo usuário"""

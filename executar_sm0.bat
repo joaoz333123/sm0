@@ -1,3 +1,4 @@
 @echo off
-start "" wscript.exe "%~dp0executar_sm0.vbs"
+cd /d "%~dp0"
+start "" "%LOCALAPPDATA%\Programs\Python\Python314\pythonw.exe" main.py
 exit /b 0
