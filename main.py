@@ -38,6 +38,14 @@ class SM0App:
         self.root.resizable(True, True)
         self.root.minsize(560, 720)
         
+        # Ícone da janela e barra de tarefas
+        try:
+            icon_ico = Path("scrcpy/icon.ico")
+            if icon_ico.exists():
+                self.root.iconbitmap(str(icon_ico))
+        except Exception:
+            pass
+        
         # Variáveis de controle
         self.scrcpy_process = None
         self.scrcpy_log = None
