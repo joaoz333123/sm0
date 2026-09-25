@@ -91,6 +91,7 @@ class SM0App:
             "auto_mirror_on_connect": True,
             "borderless": False,
             "minimize_to_tray": True,
+            "start_with_windows": True,
             "last_ip": "192.168.3.83",
             "last_pair_port": "",
             "last_pair_code": "",
@@ -122,6 +123,8 @@ class SM0App:
             self.settings["auto_mirror_on_connect"] = self.auto_mirror_var.get()
             self.settings["borderless"] = self.borderless_var.get()
             self.settings["minimize_to_tray"] = self.minimize_tray_var.get()
+            if hasattr(self, 'start_windows_var'):
+                self.settings["start_with_windows"] = self.start_windows_var.get()
             self.settings["last_ip"] = self.ip_entry.get().strip()
             self.settings["last_pair_port"] = self.pair_port_entry.get().strip()
             self.settings["last_pair_code"] = self.pair_code_entry.get().strip()
@@ -421,6 +424,19 @@ class SM0App:
             variable=self.minimize_tray_var
         )
         self.minimize_tray_checkbox.pack(side="left")
+
+        # Toggles adicionais - Linha 3
+        toggles_row3 = ctk.CTkFrame(config_frame, fg_color="transparent")
+        toggles_row3.pack(padx=10, pady=(2, 6), fill="x")
+
+        self.start_windows_var = ctk.BooleanVar(value=self.is_startup_enabled())
+        self.start_windows_checkbox = ctk.CTkCheckBox(
+            toggles_row3, 
+            text="Iniciar com o Windows (segundo plano)",
+            variable=self.start_windows_var,
+            command=self.toggle_startup_windows
+        )
+        self.start_windows_checkbox.pack(side="left")
         
         # === SEÇÃO 5: BOTÕES DE AÇÃO E LOG ===
         control_frame = ctk.CTkFrame(self.root)
@@ -683,6 +699,42 @@ class SM0App:
                 if not self.is_connected:
                     self.connect_button.configure(state="normal", text="▶ Conectar")
         threading.Thread(target=_task, daemon=True).start()
+
+    def get_startup_shortcut_path(self) -> Path:
+        """Retorna o caminho do atalho de inicialização no Windows."""
+        appdata = os.environ.get("APPDATA", "")
+        if appdata:
+            return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "sm0.lnk"
+        return Path.home() / "AppData" / "Roaming" / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup" / "sm0.lnk"
+
+    def is_startup_enabled(self) -> bool:
+        """Verifica se o atalho de inicialização existe."""
+        return self.get_startup_shortcut_path().exists()
+
+    def toggle_startup_windows(self):
+        """Ativa ou desativa a inicialização automática junto com o Windows."""
+        enabled = self.start_windows_var.get()
+        shortcut_path = self.get_startup_shortcut_path()
+        try:
+            if enabled:
+                import win32com.client
+                sh = win32com.client.Dispatch("WScript.Shell")
+                lnk = sh.CreateShortcut(str(shortcut_path))
+                lnk.TargetPath = sys.executable.replace("python.exe", "pythonw.exe")
+                lnk.Arguments = str(Path(__file__).resolve())
+                lnk.WorkingDirectory = str(Path(__file__).parent.resolve())
+                icon_path = Path(__file__).parent.resolve() / "scrcpy" / "icon.ico"
+                if icon_path.exists():
+                    lnk.IconLocation = f"{icon_path},0"
+                lnk.Save()
+                self.update_status("Inicialização com o Windows ativada!")
+            else:
+                if shortcut_path.exists():
+                    shortcut_path.unlink()
+                self.update_status("Inicialização com o Windows desativada.")
+            self.save_settings()
+        except Exception as e:
+            self.update_status(f"Erro ao configurar inicialização: {e}")
 
     def reset_adb(self):
         """Limpa conexões travadas no ADB"""
